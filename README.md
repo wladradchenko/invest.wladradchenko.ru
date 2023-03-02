@@ -117,6 +117,11 @@ python run.py
 | Автоматический трейдинг / Automatic trading | -  | + | [Algorithmic Trading Using Python](https://www.youtube.com/watch?v=xfzGZB4HhEE) |
 | Оповещение в Telegram / Notification in Telegram | -  | + | [sendMessage](https://core.telegram.org/bots/api#sendmessage) |
 
+<!-- VIDEO -->
+## Видео / Video
+
+[![Watch the video](https://img.youtube.com/vi/KvgMHC8Wfgk/maxresdefault.jpg)](https://youtu.be/KvgMHC8Wfgk)
+
 <!-- CONTACT -->
 ## Контакт / Contact
 
