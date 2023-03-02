@@ -1,0 +1,6 @@
+aiohttp
+aiosqlite
+requests
+toml
+python-socketio
+tinkoff-investments
