@@ -131,4 +131,8 @@ python run.py
 
 Проект / Code: [https://github.com/wladradchenko/invest.wladradchenko.ru](https://github.com/wladradchenko/invest.wladradchenko.ru)
 
+Сайт проекта / Project web-site: [invest.wladradchenko.ru](https://invest.wladradchenko.ru)
+
+Мобильное приложение / Mobile app: [Google Play](https://play.google.com/store/apps/details?id=ru.wladradchenko)
+
 <p align="right">(<a href="#top">вернуться наверх / back to top</a>)</p>
