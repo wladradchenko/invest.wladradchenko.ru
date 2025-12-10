@@ -3,7 +3,6 @@
 [![GitHub package version](https://img.shields.io/github/v/release/wladradchenko/invest.wladradchenko.ru?display_name=tag&sort=semver)](https://github.com/wladradchenko/invest.wladradchenko.ru)
 [![License: MIT v1.0](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/wladradchenko/invest.wladradchenko.ru/blob/main/LICENSE)
 
-<p align="right">[<a href="README_ru.md">RU v2.0</a>]</p>
 <div id="top"></div>
 
 <br />
@@ -131,7 +130,6 @@ Additionally:
    * Technical indicators, predicted price changes, coupons, dividends in a detailed description of the security
    * Grouping securities by technical indicators and general conclusion.
    * Mixing various indicators and smart exclusion of underweight securities and recalculation of weighting taking into account diversification
-   * English and Russian localization
 
 ## Architecture
 

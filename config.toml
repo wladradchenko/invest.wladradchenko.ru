@@ -1,0 +1,13 @@
+[database]
+host='127.0.0.1'
+port=3306
+user='root'  # wladradchenko.ru
+password='vasexperts'  # Z6VOVmf0wS51
+db='moex'
+
+[tinkoff]
+readonly="t.mt2asr9kXMW9lWgHjIs-_-8SwM3Z7FSWrOEW6A-QX7kIkcm4_pRaNx7x80xD2loBu8rFWtzKaeHxfu-z3sjbow"
+
+[telegram]
+token = "5972811988:AAHIT-dqiHGMqEyOBeANU9eHIVREDu3N3cM"  # token telegram bot
+chat_id = 5464853159  # chat for messages from bot

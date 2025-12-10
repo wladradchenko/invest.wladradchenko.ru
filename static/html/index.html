@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ _('MOEX Portfolio Calculator') }}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="icon" type="image/png" href="/static/icon/logo.png">
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- /static/js/tailwindcss.js  -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <!-- /static/js/chart.umd.min.js  -->
+
+</head>
+<body>
+    <main class="container">
+        <!-- Header -->
+        <header class="header grid grid-cols-2 md:grid-cols-3">
+            <div class="logo">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                    <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                    <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                    <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                </svg>
+            </div>
+            <nav class="nav hidden-on-touchscreen justify-center">
+                <a href="https://wladradchenko.ru" target="_blank" class="relative nav-link after:absolute after:left-0 after:bottom-0 after:h-[2px] after:w-0 after:bg-white after:transition-all after:duration-300 hover:after:w-full">{{ _('About me')}}</a>
+                <a href="https://github.com/wladradchenko/invest.wladradchenko.ru" target="_blank" class="relative nav-link after:absolute after:left-0 after:bottom-0 after:h-[2px] after:w-0 after:bg-white after:transition-all after:duration-300 hover:after:w-full">{{ _('GitHub')}}</a>
+                <button onclick="openDocsModal()" class="relative nav-link after:absolute after:left-0 after:bottom-0 after:h-[2px] after:w-0 after:bg-white after:transition-all after:duration-300 hover:after:w-full">{{ _('Docs')}}</button>
+            </nav>
+            <div class="justify-end flex">
+                <div class="flex flex-row items-center gap-8 hidden-on-touchscreen">
+                    {% if lang == 'ru' %}
+                        <a class="relative after:absolute after:left-0 after:bottom-0 after:h-[2px] after:w-0 after:bg-white after:transition-all after:duration-300 hover:after:w-full" href="/lang/en">EN</a>
+                    {% else %}
+                        <a class="relative after:absolute after:left-0 after:bottom-0 after:h-[2px] after:w-0 after:bg-white after:transition-all after:duration-300 hover:after:w-full" href="/lang/ru">RU</a>
+                    {% endif %}
+                    <a href="https://www.patreon.com/c/wladradchenko" target="_blank" class="cta-button bg-violet">{{ _('Send Donut')}}</a>
+                </div>
+                <button class="mobile-menu block-on-touchscreen hidden">
+                    <svg width="32" height="24" viewBox="0 0 32 24" fill="none">
+                        <path d="M3 8H28" stroke="white" stroke-width="2"/>
+                        <path d="M3 18H28" stroke="white" stroke-width="2"/>
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <section class="w-full flex flex-col">
+            <div style="padding: 4vh 4vw;">
+                <h1 class="font-worksans title w-full">
+                    <span>{{ _('Index')}}.</span>
+                    <span>{{ _('Portfolio')}}.</span>
+                    <span class="justify-between flex items-center">
+                        <text>{{ _('Calculator')}}</text>
+                        <text class="hidden-on-touchscreen" style="font-weight: 300;font-size: 2.5rem;">/</text>
+                        <button onclick="smoothScroll(event, 'indexesStepHeader')" class="flex flex-row items-center gap-3 hidden-on-touchscreen cta-button bg-white hover:bg-gray-200">
+                            {{ _('Start Now')}}
+                            <svg width="15px" height="15px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M12.2929 4.29289C12.6834 3.90237 13.3166 3.90237 13.7071 4.29289L20.7071 11.2929C21.0976 11.6834 21.0976 12.3166 20.7071 12.7071L13.7071 19.7071C13.3166 20.0976 12.6834 20.0976 12.2929 19.7071C11.9024 19.3166 11.9024 18.6834 12.2929 18.2929L17.5858 13H4C3.44772 13 3 12.5523 3 12C3 11.4477 3.44772 11 4 11H17.5858L12.2929 5.70711C11.9024 5.31658 11.9024 4.68342 12.2929 4.29289Z" fill="#000000"/></svg>
+                        </button>
+                    </span>
+                </h1>
+                <text class="ml-1 hidden block-on-touchscreen text-white">{{ _('Allocation of capital to Moscow Exchange index securities')}}</text>
+                <!--Распределение капитала на бумаги индекса Московской биржи -->
+                <div class="hidden block-on-touchscreen mt-32 md:mt-10">
+                    <div class="flex flex-col">
+                        <button onclick="smoothScroll(event, 'indexesStepHeader')" class="cta-button bg-violet">
+                            {{ _('Start Now')}}
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <img style="max-height: 45vh;" src="/static/img/context.png" alt="Index Portfolio Calculator" class="mt-28 md:mt-8 w-full h-full object-top">
+            <div style="font-size: 2rem;font-weight: bold;" class="text-white rfm-marquee overflow-hidden">
+                <span class="px-2 md:px-10">IMOEX</span>
+                <span class="px-2 md:px-10">MOEX10</span>
+                <span class="px-2 md:px-10">RTSI</span>
+                <span class="px-2 md:px-10">MOEXBC</span>
+                <span class="px-2 md:px-10">PUPAI</span> 
+                <span class="px-2 md:px-10">RUPMI</span>
+                <span class="px-2 md:px-10">MRRT</span>
+                <span class="px-2 md:px-10">MRSV</span>
+                <span class="px-2 md:px-10">RGBI</span>
+                <span class="px-2 md:px-10">ICLIMATE</span>
+            </div>
+            <script type="module">
+                import Marquee from '/static/js/vanilla-marquee.min.js';
+
+                const containerMarquee = document.querySelector('.rfm-marquee');
+                new Marquee(containerMarquee, {
+                    duplicated: true,
+                    duration: 5000,
+                    pauseOnHover: true,
+                    startVisible: true,
+                    speed: 30,
+                });
+            </script>
+        </section>
+
+        <section id="indexesStepHeader" class="w-full flex flex-col" style="padding: 4vh 4vw;">
+            <hr class="opacity-20 hidden-on-touchscreen">
+
+            <div class="text-white flex flex-col md:grid md:grid-cols-4 p-4 gap-2 md:gap-0">
+                <div class="col-span-1 flex flex-col gap-10 md:gap-2 p-4 justify-between">
+                    <div class="text-9xl md:text-8xl" style="font-weight: 500;line-height: .9;">#1</div>
+                    <div class="ml-1 md:ml-0 opacity-80 text-xl md:text-base">
+                        <div>
+                            <text class="indexes-count-text"></text>
+                            {% if lang == 'ru' %}
+                                <text class="indexes-count-text-plural"></text>
+                            {% else %}
+                                <text>{{ _('Indexes')}}</text>
+                            {% endif %}
+                        </div>
+                        <div>{{ _('Based on MOEX data')}}</div>
+                    </div>
+                </div>
+                <div class="justify-between col-span-3 flex flex-col gap-10 md:gap-3 border-t md:border-t-0 md:border-l border-white border-opacity-20 p-4">
+                    <h3 class="ml-1 md:ml-0 text-xl md:text-base" style="font-weight: 500;">{{ _('Index Selection')}}</h3>
+                    <!--Выберите индекс -->
+                    <p class="ml-1 md:ml-0 opacity-80 text-xl md:text-base">{{ _('Choose a Moscow Exchange index to explore its composition and performance.')}}</p> 
+                    <!--Выберите индекс Московской биржи для анализа -->
+                    <div class="ml-1 md:ml-0">
+                        <button onclick="smoothScroll(event, 'indexesStep')" class="cta-button flex flex-row items-center gap-3 bg-white hover:bg-gray-200">
+                            {{ _('Select Index')}}
+                            <svg width="15px" height="15px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M12.2929 4.29289C12.6834 3.90237 13.3166 3.90237 13.7071 4.29289L20.7071 11.2929C21.0976 11.6834 21.0976 12.3166 20.7071 12.7071L13.7071 19.7071C13.3166 20.0976 12.6834 20.0976 12.2929 19.7071C11.9024 19.3166 11.9024 18.6834 12.2929 18.2929L17.5858 13H4C3.44772 13 3 12.5523 3 12C3 11.4477 3.44772 11 4 11H17.5858L12.2929 5.70711C11.9024 5.31658 11.9024 4.68342 12.2929 4.29289Z" fill="#000000"/></svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <hr class="opacity-20 hidden-on-touchscreen">
+        </section>
+
+        <!-- Step 1: Indexes List -->
+        <section class="w-full flex flex-col" style="padding: 1vh 4vw;">
+            <div id="indexesStep" class="step active">
+                <div id="indexesList" class="indexes-grid">
+                    <p class="loading-text">{{ _('Loading indexes')}}...</p>
+                    <!-- Загрузка индексов... -->
+                </div>
+            </div>
+        </section>
+
+        <section id="securitiesStepHeader" class="hidden w-full flex flex-col" style="padding: 4vh 4vw;">
+            <hr class="opacity-20 hidden-on-touchscreen">
+
+            <div class="text-white flex flex-col md:grid md:grid-cols-4 p-4 gap-2 md:gap-0">
+                <div class="col-span-1 flex flex-col gap-10 md:gap-2 p-4 justify-between">
+                    <div class="text-9xl md:text-8xl" style="font-weight: 500;line-height: .9;">#2</div>
+                    <div class="ml-1 md:ml-0 opacity-80 text-xl md:text-base">
+                        <div>
+                            <text class="securities-count-text"></text>
+                            {% if lang == 'ru' %}
+                                <text class="securities-count-text-plural"></text>
+                            {% else %}
+                                <text>{{ _('Securities')}}</text>
+                            {% endif %}
+                        </div>
+                        <div id="index-title">{{ _('No index selected')}}</div>
+                        <div id="index-excluded-count"></div>
+                    </div>
+                </div>
+                <div class="justify-between col-span-3 flex flex-col gap-5 md:gap-3 border-t md:border-t-0 md:border-l border-white border-opacity-20 p-4">
+                    <h3 class="ml-1 md:ml-0 text-xl md:text-base" style="font-weight: 500;">{{ _('Securities Selection from Index')}}</h3>
+                    <!--Выберите индекс -->
+                    <p class="ml-1 md:ml-0 opacity-80 text-xl md:text-base"></p>{{ _('Select one or more securities from the index. Specify the capital amount, and the neural network will predict the portfolio’s return.')}}</p>
+                    <!--Выберите индекс Московской биржи для анализа -->
+                    <div class="ml-2 md:ml-0 flex flex-col md:flex-row gap-3">
+                        <button onclick="smoothScroll(event, 'indexesStep')" class="cta-button flex flex-row items-center gap-3 bg-white hover:bg-gray-200">
+                            <svg style="rotate: 180deg;" width="15px" height="15px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M12.2929 4.29289C12.6834 3.90237 13.3166 3.90237 13.7071 4.29289L20.7071 11.2929C21.0976 11.6834 21.0976 12.3166 20.7071 12.7071L13.7071 19.7071C13.3166 20.0976 12.6834 20.0976 12.2929 19.7071C11.9024 19.3166 11.9024 18.6834 12.2929 18.2929L17.5858 13H4C3.44772 13 3 12.5523 3 12C3 11.4477 3.44772 11 4 11H17.5858L12.2929 5.70711C11.9024 5.31658 11.9024 4.68342 12.2929 4.29289Z" fill="#000000"/></svg>
+                            {{ _('Back to Indexes')}}
+                        </button>
+                        <div class="capital-input-section ml-1 md:ml-0 opacity-80 text-xl md:text-base">
+                            <label class="hidden-on-touchscreen" for="capitalInput">{{ _('Your capital')}}:</label>
+                            <input type="number" id="capitalInput" placeholder="100000" min="0" step="1000" class="capital-input transition-all duration-300">
+                            (₽)
+                        </div> 
+                        <button id="calculateBtn" class="cta-button flex flex-row items-center gap-3 bg-white hover:bg-gray-200">
+                            {{ _('Calculate Portfolio' )}}
+                            <svg width="15px" height="15px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M12.2929 4.29289C12.6834 3.90237 13.3166 3.90237 13.7071 4.29289L20.7071 11.2929C21.0976 11.6834 21.0976 12.3166 20.7071 12.7071L13.7071 19.7071C13.3166 20.0976 12.6834 20.0976 12.2929 19.7071C11.9024 19.3166 11.9024 18.6834 12.2929 18.2929L17.5858 13H4C3.44772 13 3 12.5523 3 12C3 11.4477 3.44772 11 4 11H17.5858L12.2929 5.70711C11.9024 5.31658 11.9024 4.68342 12.2929 4.29289Z" fill="#000000"/></svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <hr class="opacity-20 hidden-on-touchscreen">
+
+            <div class="flex flex-wrap items-center gap-3 mt-5" style="padding: 0vh 4vw;">
+                <button data-btn="weight" onclick="groupSecurities('weight');" class="cta-button flex flex-row items-center gap-3 bg-violet hover:bg-violet-dark">
+                    {{ _('Weight')}}
+                </button>
+                <button data-btn="RSI" onclick="groupSecurities('RSI');" class="cta-button flex flex-row items-center gap-3 bg-white hover:bg-gray-200">
+                    {{ _('RSI')}}
+                </button>
+                <button data-btn="MACD" onclick="groupSecurities('MACD');" class="cta-button flex flex-row items-center gap-3 bg-white hover:bg-gray-200">
+                    {{ _('MACD')}}
+                </button>
+                <button data-btn="BB" onclick="groupSecurities('BB');" class="cta-button flex flex-row items-center gap-3 bg-white hover:bg-gray-200">
+                    {{ _('Bollinger')}}
+                </button>
+                <button data-btn="EMA" onclick="groupSecurities('EMA');" class="cta-button flex flex-row items-center gap-3 bg-white hover:bg-gray-200">
+                    {{ _('EMA')}}
+                </button>
+                <button data-btn="ADX" onclick="groupSecurities('ADX');" class="cta-button flex flex-row items-center gap-3 bg-white hover:bg-gray-200">
+                    {{ _('ADX')}}
+                </button>
+                <button data-btn="Summary" onclick="groupSecurities('Summary');" class="cta-button flex flex-row items-center gap-3 bg-white hover:bg-gray-200">
+                    {{ _('Summary')}}
+                </button>
+            </div>
+        </section>
+        
+        <!-- Step 2: Securities in Index -->
+        <section id="securitiesStep" class="hidden w-full flex flex-col" style="padding: 1vh 4vw;">
+            <div class="step active">
+                <div id="securitiesList" class="securities-list">
+                    <p class="loading-text">{{ _('Loading securities')}}...</p>
+                </div>
+            </div>
+        </section>
+        
+        <!-- Disclaimer -->
+        <template id="disclaimer-template">
+            <div class="absolute z-50 p-3 rounded-md text-sm text-white border" style="border-color: var(--primary-color); background: rgba(99,102,241,0.15);">
+              <strong>⚠️ {{ _('Important')}}:</strong> {{ _('This information is not financial advice. All decisions are made at your own risk. Before making investment decisions, consult with a financial advisor.')}}
+            </div>
+          </template>
+
+        <!-- Step 3: Portfolio Results -->
+        <section id="portfolioStepHeader" class="hidden w-full flex flex-col" style="padding: 4vh 4vw;">
+            <hr class="opacity-20 hidden-on-touchscreen">
+
+            <div class="text-white flex flex-col md:grid md:grid-cols-4 p-4 gap-2 md:gap-0">
+                <div class="col-span-1 flex flex-col gap-10 md:gap-2 p-4 justify-between">
+                    <div class="text-9xl md:text-8xl" style="font-weight: 500;line-height: .9;">#3</div>
+                    <div class="ml-1 md:ml-0 opacity-80 text-xl md:text-base">
+                        <div>{{ _('Portfolio Results')}}</div>
+                        <div>{{ _('Investment analysis')}}</div>
+                    </div>
+                </div>
+                <div class="justify-between col-span-3 flex flex-col gap-10 md:gap-3 border-t md:border-t-0 md:border-l border-white border-opacity-20 p-4">
+                    <h3 class="ml-1 md:ml-0 text-xl md:text-base" style="font-weight: 500;">{{ _('Short-Term Return Forecast on 7-days')}}</h3>
+                    <p id="portfolio-description" class="ml-1 md:ml-0 opacity-80 text-xl md:text-base">{{ _('Detailed breakdown of your portfolio allocation and expected returns.')}}</p>
+                    <div class="ml-1 md:ml-0">
+                        <button onclick="showSecurities()" class="cta-button flex flex-row items-center gap-3 bg-white hover:bg-gray-200">
+                            <svg style="rotate: 180deg;" width="15px" height="15px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M12.2929 4.29289C12.6834 3.90237 13.3166 3.90237 13.7071 4.29289L20.7071 11.2929C21.0976 11.6834 21.0976 12.3166 20.7071 12.7071L13.7071 19.7071C13.3166 20.0976 12.6834 20.0976 12.2929 19.7071C11.9024 19.3166 11.9024 18.6834 12.2929 18.2929L17.5858 13H4C3.44772 13 3 12.5523 3 12C3 11.4477 3.44772 11 4 11H17.5858L12.2929 5.70711C11.9024 5.31658 11.9024 4.68342 12.2929 4.29289Z" fill="#000000"/></svg>
+                            {{ _('Back to Securities')}}
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <hr class="opacity-20 hidden-on-touchscreen">
+        </section>
+
+        <section id="portfolioStep" class="hidden w-full flex flex-col" style="padding: 1vh 4vw;">
+            <div id="portfolioResults" class="w-full">
+                <div class="w-full flex flex-col gap-6">
+                    <!-- Portfolio Summary -->
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div class="backdrop-blur-xl border border-white border-opacity-10 rounded-xl p-6" style="background: #1e1e1e8f;">
+                            <div class="text-white text-sm opacity-70 mb-2">{{ _('Invested Capital')}}</div>
+                            <div id="portfolio-capital" class="text-white text-2xl font-bold"></div>
+                        </div>
+                        <div class="backdrop-blur-xl border border-white border-opacity-10 rounded-xl p-6" style="background: #1e1e1e8f;">
+                            <div class="text-white text-sm opacity-70 mb-2">{{ _('Expected Portfolio Value')}}</div>
+                            <div id="portfolio-value" class="text-white text-2xl font-bold"></div>
+                        </div>
+                        <div class="backdrop-blur-xl border border-white border-opacity-10 rounded-xl p-6" style="background: #1e1e1e8f;">
+                            <div class="text-white text-sm opacity-70 mb-2">{{ _('Expected Return')}}</div>
+                            <div id="portfolio-yield" class="text-2xl font-bold text-red-400"></div>
+                        </div>
+                    </div>
+                    <!-- Portfolio Breakdown -->
+                    <div class="backdrop-blur-xl border border-white border-opacity-10 rounded-xl p-6" style="background: #1e1e1e8f;">
+                        <h3 class="text-white text-xl font-semibold mb-4">{{ _('Portfolio Breakdown')}}</h3>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-white">
+                                <thead>
+                                    <tr class="border-b border-white border-opacity-10">
+                                        <th class="text-left py-3 px-4 text-sm font-semibold opacity-70">{{ _('Security')}}</th>
+                                        <th class="text-right py-3 px-4 text-sm font-semibold opacity-70">{{ _('Weight')}}</th>
+                                        <th class="text-right py-3 px-4 text-sm font-semibold opacity-70">{{ _('Price')}}</th>
+                                        <th class="text-right py-3 px-4 text-sm font-semibold opacity-70">{{ _('Allocation')}}</th>
+                                        <th class="text-right py-3 px-4 text-sm font-semibold opacity-70">{{ _('Shares')}}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <template id="portfolio-item-template">
+            <tr class="border-b border-white border-opacity-5 hover:bg-white hover:bg-opacity-5 transition-colors">
+                <td data-key="secid" class="py-3 px-4 font-medium"></td>
+                <td data-key="weight" class="py-3 px-4 text-right"></td>
+                <td data-key="price" class="py-3 px-4 text-right"></td>
+                <td data-key="allocation" class="py-3 px-4 text-right"></td>
+                <td data-key="shares" class="py-3 px-4 text-right"></td>
+            </tr>
+        </template>
+
+        <template id="securities-item-template">
+            <tr class="border-b border-white border-opacity-5 hover:bg-white hover:bg-opacity-5 transition-colors">
+                <td data-key="date" class="py-3 px-4"></td>
+                <td data-key="sum" class="py-3 px-4 text-right font-medium"></td>
+                <td data-key="rate" class="py-3 px-4 text-right font-medium hidden"></td>
+            </tr>
+        </template>
+          
+
+        <!-- Security Details Modal -->
+        <template id="security-modal-template">
+            <div style="backdrop-filter: blur(5px);background: rgba(0, 0, 0, 0.8);background: #000000a6 !important;" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm">
+              <div class="relative w-full max-w-4xl max-h-[90vh] mx-4 backdrop-blur-xl border border-white border-opacity-10 rounded-2xl shadow-2xl overflow-hidden">
+                <button id="modalClose" class="absolute top-4 right-1 z-10 w-10 h-10 flex items-center justify-center text-white hover:text-[#83599a] transition-colors">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+                <div id="modalBody" class="p-6 md:p-8 overflow-y-auto max-h-[90vh]">
+                    <div class="flex flex-col gap-6">
+                        <!-- Header -->
+                    <div class="border-b border-white border-opacity-10 pb-4">
+                        <h2 id="modal-secname" class="text-white text-2xl font-bold mb-2"></h2>
+                        <div id="modal-prevprice" class="text-[#6366f1] text-3xl font-bold"></div>
+                    </div>
+          
+                        <!-- Indicators -->
+                    <div style="background: #1e1e1e8f;" id="modalIndicators" class="backdrop-blur-xl border border-white border-opacity-10 rounded-xl p-6 hidden">
+                        <h3 class="text-white text-lg font-semibold mb-4">{{ _('Technical Indicators')}}</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="modalIndicatorsContent"></div>
+                    </div>
+          
+                    <!-- Predictions -->
+                    <div style="background: #1e1e1e8f;" id="modalPredictions" class="backdrop-blur-xl border border-white border-opacity-10 rounded-xl p-6 hidden">
+                        <h3 class="text-white text-lg font-semibold mb-4">{{ _('Predictions')}}</h3>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-3" id="modalPredictionsContent"></div>
+                    </div>
+          
+                    <!-- Dividends / Coupons / Yields -->
+                    <div id="modalDividends" style="background: #1e1e1e8f;" class="backdrop-blur-xl border border-white border-opacity-10 rounded-xl p-6 overflow-x-auto">
+                        <h3 class="text-white text-lg font-semibold mb-4">{{ _('Dividends')}}</h3>
+                    </div>
+                    <div style="background: #1e1e1e8f;" id="modalCoupons" class="backdrop-blur-xl border border-white border-opacity-10 rounded-xl p-6 overflow-x-auto">
+                        <h3 class="text-white text-lg font-semibold mb-4">{{ _('Coupons')}}</h3>
+                    </div>
+                    <div id="modalYields" style="background: #1e1e1e8f;" class="backdrop-blur-xl border border-white border-opacity-10 rounded-xl p-6 overflow-x-auto">
+                        <h3 class="text-white text-lg font-semibold mb-4">{{ _('Yields')}}</h3>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+        </template>
+
+        <template id="docs-modal-template">
+            <div style="backdrop-filter: blur(5px);background: rgba(0, 0, 0, 0.8);background: #000000a6 !important;" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm">
+              <div class="relative w-full max-w-4xl max-h-[90vh] mx-4 backdrop-blur-xl border border-white border-opacity-10 rounded-2xl shadow-2xl overflow-hidden">
+                <button id="modalClose" class="absolute top-4 right-1 z-10 w-10 h-10 flex items-center justify-center text-white hover:text-[#83599a] transition-colors">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+                <div id="modalBody" class="p-6 md:p-8 overflow-y-auto max-h-[90vh] prose prose-invert">
+                </div>
+              </div>
+            </div>
+        </template>
+
+        <template id="indicator-template">
+            <div style="border-color: var(--primary-color);background: rgba(99, 102, 241, 0.15);" class="border border-white border-opacity-5 rounded-lg p-4">
+              <div class="text-white text-sm font-medium mb-1" data-key="name"></div>
+              <div class="text-[#6366f1] text-xl font-bold mb-2" data-key="value"></div>
+              <div class="text-xs border rounded-lg p-2 mt-2 hidden" data-key="recommendation">
+                <div class="font-semibold" data-key="action"></div>
+                <div class="opacity-80 mt-1" data-key="description"></div>
+              </div>
+            </div>
+        </template>
+          
+        <template id="prediction-template">
+            <div style="border-color: var(--primary-color);background: rgba(99, 102, 241, 0.15);" class="border border-white border-opacity-5 rounded-lg p-3 text-center">
+              <div class="text-white text-xs opacity-70 mb-1" data-key="date"></div>
+              <div class="text-[#6366f1] font-bold" data-key="price"></div>
+            </div>
+          </template>
+
+        <!-- Index Action Modal -->
+        <template id="index-action-modal-template">
+            <div style="backdrop-filter: blur(5px);background: rgba(0, 0, 0, 0.8);background: #000000a6 !important;" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm">
+              <div class="relative w-full max-w-md mx-4 backdrop-blur-xl border border-white border-opacity-10 rounded-2xl shadow-2xl overflow-hidden">
+                <button class="index-action-modal-close absolute top-4 right-4 z-10 w-10 h-10 flex items-center justify-center text-white hover:text-[#83599a] transition-colors">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+                <div class="p-6 md:p-8">
+                    <h3 class="text-white text-xl font-bold mb-4">{{ _('Select Action')}}</h3>
+                    <div class="text-sm space-y-2 mb-4 flex flex-col gap-2">
+                        <span>{{ _('If a security is present in multiple indices, the maximum weight is taken (not summed) to ensure proper diversification of the portfolio.')}}</span>
+                            <span>{{ _('Securities with a weight less than 0.3% are automatically excluded, and the remaining weights are normalized to 100%.')}}</span>
+                            <button class="index-action-add-btn cta-button bg-violet hover:bg-violet-dark text-white">
+                            {{ _('Add to Existing Indices')}}
+                        </button>
+                    </div>
+                    <div class="flex flex-col gap-3">
+                        <div class="flex flex-row items-center gap-2">
+                            <hr class="opacity-20 w-full">
+                            <text>{{ _('or')}}</text>
+                            <hr class="opacity-20 w-full">
+                        </div>
+                        <button class="index-action-replace-btn cta-button bg-white hover:bg-gray-200 text-black">
+                            {{ _('Open Separately (Replace Current)')}}
+                        </button>
+                    </div>
+                </div>
+                <div>
+                    
+                </div>
+              </div>
+            </div>
+        </template>
+
+        <!-- Weight Edit Modal -->
+        <template id="weight-edit-modal-template">
+            <div style="backdrop-filter: blur(5px);background: rgba(0, 0, 0, 0.8);background: #000000a6 !important;" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm">
+              <div class="relative w-full max-w-md mx-4 backdrop-blur-xl border border-white border-opacity-10 rounded-2xl shadow-2xl overflow-hidden">
+                <button class="weight-edit-modal-close absolute top-4 right-4 z-10 w-10 h-10 flex items-center justify-center text-white hover:text-[#83599a] transition-colors">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+                <div class="p-6 md:p-8">
+                    <h3 class="text-white text-xl font-bold mb-4">{{ _('Edit Weight')}}</h3>
+                    <p class="text-white opacity-70 mb-2" id="weight-edit-secname"></p>
+                    <p class="text-white opacity-50 text-sm mb-4">{{ _('Current weight')}}: <span id="weight-edit-current"></span>%</p>
+                    <div class="mb-4">
+                        <label class="text-white text-sm mb-2 block">{{ _('New weight')}} (%):</label>
+                        <input type="number" id="weight-edit-input" min="0" max="100" step="0.01" class="w-full p-3 rounded-lg bg-white bg-opacity-10 border border-white border-opacity-20 text-white" placeholder="0.00">
+                    </div>
+                    <p class="text-white opacity-50 text-xs mb-4">{{ _('Other weights will be automatically recalculated proportionally.')}}</p>
+                    <div class="flex gap-3">
+                        <button class="weight-edit-save-btn cta-button bg-violet hover:bg-violet-dark text-white flex-1">
+                            {{ _('Save')}}
+                        </button>
+                        <button class="weight-edit-modal-close cta-button bg-white hover:bg-gray-200 text-black flex-1">
+                            {{ _('Cancel')}}
+                        </button>
+                    </div>
+                </div>
+              </div>
+            </div>
+        </template>
+          
+          
+        <!-- Loading Overlay -->
+        <div id="loadingOverlay" class="loading-overlay">
+            <div class="loading-spinner">
+                <div class="spinner"></div>
+                <p>{{ _('Loading data')}}...</p>
+                <!-- Загрузка данных... -->
+            </div>
+        </div>
+    </main>
+
+    <footer class="text-center text-base text-gray-400 py-4"> &copy; 2023 - <span id="currentYear"></span> {% if lang == 'ru' %}{% else %} {{ _('by')}} {% endif %}
+        <a href="https://github.com/wladradchenko" target="_blank" class="underline hover:text-white">Wlad Radchenko</a>
+    </footer>
+      
+    <script>
+        document.querySelector('#currentYear').textContent = new Date().getFullYear();
+        const lang = '{{ lang | safe }}'; 
+    </script>
+
+    <script type="module">
+        import { marked } from "https://cdn.jsdelivr.net/npm/marked/lib/marked.esm.js";
+        // /static/js/marked.esm.js 
+        window.openDocsModal = function() {
+            const template = document.querySelector('#docs-modal-template');
+            const clone = template.content.cloneNode(true);
+            const modal = clone.querySelector('div'); // сам контейнер модала
+            modal.querySelector('#modalClose').addEventListener('click', () => {
+                modal.remove();
+            });
+            document.body.appendChild(modal);
+            modal.classList.remove('hidden');
+            fetch('/static/docs/README.md').then(res => res.text()).then(md => {
+                modal.querySelector('#modalBody').innerHTML = marked.parse(md);
+            }).catch(err => {
+                modal.querySelector('#modalBody').innerHTML = `<p style="color:red;">Failed to load docs.</p>`;
+                console.error(err);
+            });
+        }
+    </script>
+      
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

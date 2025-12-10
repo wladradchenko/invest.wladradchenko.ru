@@ -1,8 +1,0 @@
-database="sqlite.db"
-
-[tinkoff]
-readonly = "TOKEN"  # token Tinkoff
-
-[telegram]
-token = "TOKEN"  # token telegram bot
-chat_id = 0  # chat for messages from bot

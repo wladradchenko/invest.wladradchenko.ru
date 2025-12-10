@@ -1,0 +1,283 @@
+# Translations template for PROJECT.
+# Copyright (C) 2025 ORGANIZATION
+# This file is distributed under the same license as the PROJECT project.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2025.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PROJECT VERSION\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2025-12-10 20:20+0300\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.17.0\n"
+
+#: static/html/index.html:6
+msgid "MOEX Portfolio Calculator"
+msgstr ""
+
+#: static/html/index.html:30
+msgid "About me"
+msgstr ""
+
+#: static/html/index.html:31
+msgid "GitHub"
+msgstr ""
+
+#: static/html/index.html:32
+msgid "Docs"
+msgstr ""
+
+#: static/html/index.html:41
+msgid "Send Donut"
+msgstr ""
+
+#: static/html/index.html:55
+msgid "Index"
+msgstr ""
+
+#: static/html/index.html:56
+msgid "Portfolio"
+msgstr ""
+
+#: static/html/index.html:58
+msgid "Calculator"
+msgstr ""
+
+#: static/html/index.html:61 static/html/index.html:71
+msgid "Start Now"
+msgstr ""
+
+#: static/html/index.html:66
+msgid "Allocation of capital to Moscow Exchange index securities"
+msgstr ""
+
+#: static/html/index.html:115
+msgid "Indexes"
+msgstr ""
+
+#: static/html/index.html:118
+msgid "Based on MOEX data"
+msgstr ""
+
+#: static/html/index.html:122
+msgid "Index Selection"
+msgstr ""
+
+#: static/html/index.html:124
+msgid "Choose a Moscow Exchange index to explore its composition and performance."
+msgstr ""
+
+#: static/html/index.html:128
+msgid "Select Index"
+msgstr ""
+
+#: static/html/index.html:142
+msgid "Loading indexes"
+msgstr ""
+
+#: static/html/index.html:160
+msgid "Securities"
+msgstr ""
+
+#: static/html/index.html:163
+msgid "No index selected"
+msgstr ""
+
+#: static/html/index.html:168
+msgid "Securities Selection from Index"
+msgstr ""
+
+#: static/html/index.html:170
+msgid ""
+"Select one or more securities from the index. Specify the capital amount,"
+" and the neural network will predict the portfolio’s return."
+msgstr ""
+
+#: static/html/index.html:175
+msgid "Back to Indexes"
+msgstr ""
+
+#: static/html/index.html:178
+msgid "Your capital"
+msgstr ""
+
+#: static/html/index.html:183
+msgid "Calculate Portfolio"
+msgstr ""
+
+#: static/html/index.html:194 static/html/index.html:286
+msgid "Weight"
+msgstr ""
+
+#: static/html/index.html:197
+msgid "RSI"
+msgstr ""
+
+#: static/html/index.html:200
+msgid "MACD"
+msgstr ""
+
+#: static/html/index.html:203
+msgid "Bollinger"
+msgstr ""
+
+#: static/html/index.html:206
+msgid "EMA"
+msgstr ""
+
+#: static/html/index.html:209
+msgid "ADX"
+msgstr ""
+
+#: static/html/index.html:212
+msgid "Summary"
+msgstr ""
+
+#: static/html/index.html:221
+msgid "Loading securities"
+msgstr ""
+
+#: static/html/index.html:229
+msgid "Important"
+msgstr ""
+
+#: static/html/index.html:229
+msgid ""
+"This information is not financial advice. All decisions are made at your "
+"own risk. Before making investment decisions, consult with a financial "
+"advisor."
+msgstr ""
+
+#: static/html/index.html:241
+msgid "Portfolio Results"
+msgstr ""
+
+#: static/html/index.html:242
+msgid "Investment analysis"
+msgstr ""
+
+#: static/html/index.html:246
+msgid "Portfolio Calculation Results"
+msgstr ""
+
+#: static/html/index.html:247
+msgid "Detailed breakdown of your portfolio allocation and expected returns."
+msgstr ""
+
+#: static/html/index.html:251
+msgid "Back to Securities"
+msgstr ""
+
+#: static/html/index.html:266
+msgid "Invested Capital"
+msgstr ""
+
+#: static/html/index.html:270
+msgid "Expected Portfolio Value"
+msgstr ""
+
+#: static/html/index.html:274
+msgid "Expected Return"
+msgstr ""
+
+#: static/html/index.html:280
+msgid "Portfolio Breakdown"
+msgstr ""
+
+#: static/html/index.html:285
+msgid "Security"
+msgstr ""
+
+#: static/html/index.html:287
+msgid "Price"
+msgstr ""
+
+#: static/html/index.html:288
+msgid "Allocation"
+msgstr ""
+
+#: static/html/index.html:289
+msgid "Shares"
+msgstr ""
+
+#: static/html/index.html:337
+msgid "Technical Indicators"
+msgstr ""
+
+#: static/html/index.html:343
+msgid "Predictions"
+msgstr ""
+
+#: static/html/index.html:349
+msgid "Dividends"
+msgstr ""
+
+#: static/html/index.html:352
+msgid "Coupons"
+msgstr ""
+
+#: static/html/index.html:355
+msgid "Yields"
+msgstr ""
+
+#: static/html/index.html:401
+msgid "Select Action"
+msgstr ""
+
+#: static/html/index.html:403
+msgid ""
+"If a security is present in multiple indices, the maximum weight is taken"
+" (not summed) to ensure proper diversification of the portfolio."
+msgstr ""
+
+#: static/html/index.html:404
+msgid ""
+"Securities with a weight less than 0.3% are automatically excluded, and "
+"the remaining weights are normalized to 100%."
+msgstr ""
+
+#: static/html/index.html:406
+msgid "Add to Existing Indices"
+msgstr ""
+
+#: static/html/index.html:412
+msgid "or"
+msgstr ""
+
+#: static/html/index.html:416
+msgid "Open Separately (Replace Current)"
+msgstr ""
+
+#: static/html/index.html:435
+msgid "Edit Weight"
+msgstr ""
+
+#: static/html/index.html:437
+msgid "Current weight"
+msgstr ""
+
+#: static/html/index.html:439
+msgid "New weight"
+msgstr ""
+
+#: static/html/index.html:442
+msgid "Other weights will be automatically recalculated proportionally."
+msgstr ""
+
+#: static/html/index.html:445
+msgid "Save"
+msgstr ""
+
+#: static/html/index.html:448
+msgid "Cancel"
+msgstr ""
+
+#: static/html/index.html:467
+msgid "by"
+msgstr ""

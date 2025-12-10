@@ -1,0 +1,292 @@
+# Russian translations for PROJECT.
+# Copyright (C) 2025 ORGANIZATION
+# This file is distributed under the same license as the PROJECT project.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2025.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PROJECT VERSION\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2025-12-10 20:20+0300\n"
+"PO-Revision-Date: 2025-12-09 16:15+0300\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: ru\n"
+"Language-Team: ru <LL@li.org>\n"
+"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && "
+"n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.17.0\n"
+
+#: static/html/index.html:6
+msgid "MOEX Portfolio Calculator"
+msgstr "Расчёт инвестиционного портфеля"
+
+#: static/html/index.html:30
+msgid "About me"
+msgstr "Обо мне"
+
+#: static/html/index.html:31
+msgid "GitHub"
+msgstr "GitHub"
+
+#: static/html/index.html:32
+msgid "Docs"
+msgstr "Документация"
+
+#: static/html/index.html:41
+msgid "Send Donut"
+msgstr "Поддержать проект"
+
+#: static/html/index.html:55
+msgid "Index"
+msgstr "Индекс"
+
+#: static/html/index.html:56
+msgid "Portfolio"
+msgstr "Портфель"
+
+#: static/html/index.html:58
+msgid "Calculator"
+msgstr "Калькулятор"
+
+#: static/html/index.html:61 static/html/index.html:71
+msgid "Start Now"
+msgstr "Начать"
+
+#: static/html/index.html:66
+msgid "Allocation of capital to Moscow Exchange index securities"
+msgstr "Распределение капитала по бумагам индексов Московской Биржи"
+
+#: static/html/index.html:115
+msgid "Indexes"
+msgstr "Индексы"
+
+#: static/html/index.html:118
+msgid "Based on MOEX data"
+msgstr "На основе данных Московской Биржи"
+
+#: static/html/index.html:122
+msgid "Index Selection"
+msgstr "Выбор индекса"
+
+#: static/html/index.html:124
+msgid "Choose a Moscow Exchange index to explore its composition and performance."
+msgstr "Выберите индекс Московской Биржи, чтобы изучить его состав и динамику."
+
+#: static/html/index.html:128
+msgid "Select Index"
+msgstr "Выбрать индекс"
+
+#: static/html/index.html:142
+msgid "Loading indexes"
+msgstr "Загрузка индексов"
+
+#: static/html/index.html:160
+msgid "Securities"
+msgstr "Ценные бумаги"
+
+#: static/html/index.html:163
+msgid "No index selected"
+msgstr "Индекс не выбран"
+
+#: static/html/index.html:168
+msgid "Securities Selection from Index"
+msgstr "Выбор ценных бумаг"
+
+#: static/html/index.html:170
+msgid ""
+"Select one or more securities from the index. Specify the capital amount,"
+" and the neural network will predict the portfolio’s return."
+msgstr "Выберите одну или несколько бумаг из индекса. Укажите сумму капитала, и нейросеть предскажет доходность портфеля."
+
+#: static/html/index.html:175
+msgid "Back to Indexes"
+msgstr "Назад к индексам"
+
+#: static/html/index.html:178
+msgid "Your capital"
+msgstr "Ваш капитал"
+
+#: static/html/index.html:183
+msgid "Calculate Portfolio"
+msgstr "Рассчитать портфель"
+
+#: static/html/index.html:194 static/html/index.html:286
+msgid "Weight"
+msgstr "Вес"
+
+#: static/html/index.html:197
+msgid "RSI"
+msgstr "RSI"
+
+#: static/html/index.html:200
+msgid "MACD"
+msgstr "MACD"
+
+#: static/html/index.html:203
+msgid "Bollinger"
+msgstr "Боллинджер"
+
+#: static/html/index.html:206
+msgid "EMA"
+msgstr "EMA"
+
+#: static/html/index.html:209
+msgid "ADX"
+msgstr "ADX"
+
+#: static/html/index.html:212
+msgid "Summary"
+msgstr "Сводка"
+
+#: static/html/index.html:221
+msgid "Loading securities"
+msgstr "Загрузка ценных бумаг"
+
+msgid "Loading data"
+msgstr "Загрузка данных"
+
+#: static/html/index.html:229
+msgid "Important"
+msgstr "Важно"
+
+#: static/html/index.html:229
+msgid ""
+"This information is not financial advice. All decisions are made at your "
+"own risk. Before making investment decisions, consult with a financial "
+"advisor."
+msgstr "Эта информация не является финансовой рекомендацией. Все решения вы принимаете на свой риск. Перед принятием инвестиционных решений проконсультируйтесь с финансовым советником."
+
+#: static/html/index.html:241
+msgid "Portfolio Results"
+msgstr "Результаты портфеля"
+
+#: static/html/index.html:242
+msgid "Investment analysis"
+msgstr "Инвестиционный анализ"
+
+#: static/html/index.html:246
+msgid "Portfolio Calculation Results"
+msgstr "Результаты расчёта портфеля"
+
+#: static/html/index.html:247
+msgid "Detailed breakdown of your portfolio allocation and expected returns."
+msgstr "Подробный разбор распределения портфеля и ожидаемой доходности."
+
+#: static/html/index.html:251
+msgid "Back to Securities"
+msgstr "Назад к ценным бумагам"
+
+#: static/html/index.html:266
+msgid "Invested Capital"
+msgstr "Инвестированный капитал"
+
+#: static/html/index.html:270
+msgid "Expected Portfolio Value"
+msgstr "Ожидаемая стоимость портфеля"
+
+#: static/html/index.html:274
+msgid "Expected Return"
+msgstr "Ожидаемая доходность"
+
+#: static/html/index.html:280
+msgid "Portfolio Breakdown"
+msgstr "Распределение портфеля"
+
+#: static/html/index.html:285
+msgid "Security"
+msgstr "Ценная бумага"
+
+#: static/html/index.html:287
+msgid "Price"
+msgstr "Цена"
+
+#: static/html/index.html:288
+msgid "Allocation"
+msgstr "Распределение"
+
+#: static/html/index.html:289
+msgid "Shares"
+msgstr "Акции"
+
+#: static/html/index.html:337
+msgid "Technical Indicators"
+msgstr "Технические индикаторы"
+
+#: static/html/index.html:343
+msgid "Predictions"
+msgstr "Прогнозы"
+
+#: static/html/index.html:349
+msgid "Dividends"
+msgstr "Дивиденды"
+
+#: static/html/index.html:352
+msgid "Coupons"
+msgstr "Купоны"
+
+#: static/html/index.html:355
+msgid "Yields"
+msgstr "Доходности"
+
+#: static/html/index.html:401
+msgid "Select Action"
+msgstr "Выберите действие"
+
+#: static/html/index.html:403
+msgid ""
+"If a security is present in multiple indices, the maximum weight is taken"
+" (not summed) to ensure proper diversification of the portfolio."
+msgstr "Если бумага присутствует в нескольких индексах, используется максимальный вес (вместо суммирования), чтобы обеспечить корректную диверсификацию портфеля."
+
+#: static/html/index.html:404
+msgid ""
+"Securities with a weight less than 0.3% are automatically excluded, and "
+"the remaining weights are normalized to 100%."
+msgstr "Бумаги с весом менее 0,3% автоматически исключаются, а оставшиеся веса нормализуются до 100%."
+
+#: static/html/index.html:406
+msgid "Add to Existing Indices"
+msgstr "Добавить к существующим индексам"
+
+#: static/html/index.html:412
+msgid "or"
+msgstr "или"
+
+#: static/html/index.html:416
+msgid "Open Separately (Replace Current)"
+msgstr "Открыть отдельно (заменить текущий)"
+
+#: static/html/index.html:435
+msgid "Edit Weight"
+msgstr "Изменить вес"
+
+#: static/html/index.html:437
+msgid "Current weight"
+msgstr "Текущий вес"
+
+#: static/html/index.html:439
+msgid "New weight"
+msgstr "Новый вес"
+
+#: static/html/index.html:442
+msgid "Other weights will be automatically recalculated proportionally."
+msgstr "Остальные веса будут автоматически пересчитаны пропорционально."
+
+#: static/html/index.html:445
+msgid "Save"
+msgstr "Сохранить"
+
+#: static/html/index.html:448
+msgid "Cancel"
+msgstr "Отмена"
+
+msgid "Short-Term Return Forecast on 7-days"
+msgstr "Прогноз доходности портфеля на 7 дней"
+
+#: static/html/index.html:467
+msgid "by"
+msgstr ""
+
