@@ -17,8 +17,6 @@
   <p align="center">
     Documentation
     <br/>
-    <br/>
-    <br/>
     <a href="https://github.com/wladradchenko/invest.wladradchenko.ru/issues">Issue</a>
     ·
     <a href="https://github.com/wladradchenko/invest.wladradchenko.ru/issues">Discussions</a>
