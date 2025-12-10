@@ -185,17 +185,26 @@ This project is a personal pet project for learning and analysis purposes.
 
 The project is open for improvements and suggestions.
 
-<!-- VIDEO -->
-## Video
+<!-- Screens -->
+## Screenshots
 
-[![Watch the video](https://img.youtube.com/vi/KvgMHC8Wfgk/maxresdefault.jpg)](https://youtu.be/KvgMHC8Wfgk)
+| Screenshot 1 | Screenshot 2 | Screenshot 3 |
+|--------------|--------------|--------------|
+| [![1](screens/1.png)](screens/1.png) | [![2](screens/2.png)](screens/2.png) | [![3](screens/3.png)](screens/3.png) |
+
+| Screenshot 4 | Screenshot 5 |
+|--------------|--------------|
+| [![4](screens/4.png)](screens/4.png) | [![5](screens/5.png)](screens/5.png) |
 
 <!-- CONTACT -->
 ## Contact
 
 Owner: [Wladislav Radchenko](https://github.com/wladradchenko/)
+
 Email: [i@wladradchenko.ru](i@wladradchenko.ru)
+
 Donut: [Patreon](https://www.patreon.com/c/wladradchenko)
+
 Project: [https://github.com/wladradchenko/invest.wladradchenko.ru](https://github.com/wladradchenko/invest.wladradchenko.ru)
 
 <p align="right">(<a href="#top">back to top</a>)</p>

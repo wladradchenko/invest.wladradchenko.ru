@@ -1,0 +1,32 @@
+# Виртуальное окружение
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# База данных и кеш (будут созданы в контейнере)
+moex_data.db
+cache/*.json
+
+# Логи
+*.log
+app.log
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Документация (опционально)
+README.md
+QUICKSTART.md
+
+# Временные файлы
+*.tmp
+*.bak

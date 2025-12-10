@@ -179,18 +179,26 @@ python app.py
 Проект открыт для улучшений и предложений.
 
 <!-- VIDEO -->
+## Скриншоты
 
-## Видео
+| Скриншот 1 | Скриншот 2 | Скриншот 3 |
+|--------------|--------------|--------------|
+| [![1](screens/1.png)](screens/1.png) | [![2](screens/2.png)](screens/2.png) | [![3](screens/3.png)](screens/3.png) |
 
-[![Смотреть видео](https://img.youtube.com/vi/KvgMHC8Wfgk/maxresdefault.jpg)](https://youtu.be/KvgMHC8Wfgk)
+| Скриншот 4 | Скриншот 5 |
+|--------------|--------------|
+| [![4](screens/4.png)](screens/4.png) | [![5](screens/5.png)](screens/5.png) |
 
 <!-- CONTACT -->
 
 ## Контакты
 
-Владелец: [Владислав Радченко](https://github.com/wladradchenko/)
+Автор: [Владислав Радченко](https://github.com/wladradchenko/)
+
 Email: [i@wladradchenko.ru](mailto:i@wladradchenko.ru)
+
 Поддержка: [Patreon](https://www.patreon.com/c/wladradchenko)
+
 Проект: [https://github.com/wladradchenko/invest.wladradchenko.ru](https://github.com/wladradchenko/invest.wladradchenko.ru)
 
 <p align="right">(<a href="#top">вернуться наверх</a>)</p> 

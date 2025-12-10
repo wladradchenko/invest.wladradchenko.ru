@@ -1,5 +1,20 @@
 # Quick Start
 
+## Running Dockerfile
+
+```
+# Build the image
+docker build -t moex-portfolio-calculator .
+
+# Launching a container
+docker run -d \
+  --name moex-calculator \
+  -p 8080:8080 \
+  -v $(pwd)/moex_data.db:/app/moex_data.db \
+  -v $(pwd)/cache:/app/cache \
+  moex-portfolio-calculator
+```
+
 ## Running the Application in 3 Steps
 
 1. **Activate the virtual environment:**
