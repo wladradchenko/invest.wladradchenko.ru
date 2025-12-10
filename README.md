@@ -27,14 +27,6 @@
 
 A modern web application for analyzing Moscow Exchange (MOEX) stocks using neural networks and technical indicators.
 
-Отлично, я могу помочь превратить твой набросок в более профессиональное, чистое и солидное README на английском, сохранив структуру и суть. Я уберу смайлики, слегка отредактирую стиль, чтобы он выглядел как README для серьезного проекта, сохраняя все детали. Вот пример:
-
----
-
-# MOEX Investment Analyzer
-
-A modern web application for analyzing Moscow Exchange (MOEX) stocks using neural networks and technical indicators.
-
 ## Features
 
 * **Technical Indicators with Detailed Explanations and Recommendations**
