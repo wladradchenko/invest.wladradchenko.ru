@@ -3,6 +3,7 @@
 [![GitHub package version](https://img.shields.io/github/v/release/wladradchenko/invest.wladradchenko.ru?display_name=tag&sort=semver)](https://github.com/wladradchenko/invest.wladradchenko.ru)
 [![License: MIT v1.0](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/wladradchenko/invest.wladradchenko.ru/blob/main/LICENSE)
 
+<p align="right">[<a href="README_ru.md">RU v2.0</a>]</p>
 <div id="top"></div>
 
 <br />
@@ -23,14 +24,6 @@
     <a href="https://github.com/wladradchenko/invest.wladradchenko.ru/issues">Discussions</a>
   </p>
 </div>
-
-A modern web application for analyzing Moscow Exchange (MOEX) stocks using neural networks and technical indicators.
-
-Отлично, я могу помочь превратить твой набросок в более профессиональное, чистое и солидное README на английском, сохранив структуру и суть. Я уберу смайлики, слегка отредактирую стиль, чтобы он выглядел как README для серьезного проекта, сохраняя все детали. Вот пример:
-
----
-
-# MOEX Investment Analyzer
 
 A modern web application for analyzing Moscow Exchange (MOEX) stocks using neural networks and technical indicators.
 
@@ -130,6 +123,7 @@ Additionally:
    * Technical indicators, predicted price changes, coupons, dividends in a detailed description of the security
    * Grouping securities by technical indicators and general conclusion.
    * Mixing various indicators and smart exclusion of underweight securities and recalculation of weighting taking into account diversification
+   * English and Russian localization
 
 ## Architecture
 
@@ -183,17 +177,26 @@ This project is a personal pet project for learning and analysis purposes.
 
 The project is open for improvements and suggestions.
 
-<!-- VIDEO -->
-## Video
+<!-- Screens -->
+## Screenshots
 
-[![Watch the video](https://img.youtube.com/vi/KvgMHC8Wfgk/maxresdefault.jpg)](https://youtu.be/KvgMHC8Wfgk)
+| Screenshot 1 | Screenshot 2 | Screenshot 3 |
+|--------------|--------------|--------------|
+| [![1](screens/1.png)](screens/1.png) | [![2](screens/2.png)](screens/2.png) | [![3](screens/3.png)](screens/3.png) |
+
+| Screenshot 4 | Screenshot 5 |
+|--------------|--------------|
+| [![4](screens/4.png)](screens/4.png) | [![5](screens/5.png)](screens/5.png) |
 
 <!-- CONTACT -->
 ## Contact
 
 Owner: [Wladislav Radchenko](https://github.com/wladradchenko/)
+
 Email: [i@wladradchenko.ru](i@wladradchenko.ru)
+
 Donut: [Patreon](https://www.patreon.com/c/wladradchenko)
+
 Project: [https://github.com/wladradchenko/invest.wladradchenko.ru](https://github.com/wladradchenko/invest.wladradchenko.ru)
 
 <p align="right">(<a href="#top">back to top</a>)</p>
