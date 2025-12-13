@@ -24,6 +24,8 @@ env/
 .ruff_cache/
 .cache/
 cache/
+translate/
+test.py
 
 # =========================
 # Node / JavaScript

@@ -18,6 +18,7 @@ from moex_api import MOEXClient
 from ml_models import MLPredictor
 from indicators import IndicatorAnalyzer
 from cache import CacheManager
+from parsers import ReviewsParser
 
 """
 pybabel extract -F babel.cfg -o messages.pot .
@@ -47,6 +48,7 @@ class InvestmentAnalyzer:
         self.ml_predictor = MLPredictor()
         self.indicator_analyzer = IndicatorAnalyzer()
         self.cache = CacheManager()
+        self.reviews_parser = ReviewsParser()
 
     async def init(self):
         """Initialize application"""
@@ -131,12 +133,14 @@ class InvestmentAnalyzer:
             indicators = self.indicator_analyzer.analyze_all(candles)
 
             # ML predictions
-            predictions, confidence = self.ml_predictor.predict(candles, days=7)
+            predictions, confidence = self.ml_predictor.predict(
+                candles, days=7)
 
             # Save predictions
             if predictions:
                 for i, pred_price in enumerate(predictions):
-                    pred_date = (datetime.now() + timedelta(days=i+1)).date().isoformat()
+                    pred_date = (datetime.now() +
+                                 timedelta(days=i+1)).date().isoformat()
                     await self.db.save_prediction(
                         secid, pred_date, pred_price, confidence, 'LSTM'
                     )
@@ -189,6 +193,42 @@ class InvestmentAnalyzer:
                 return securities
         except Exception as e:
             logger.error(f"Error getting index securities: {e}")
+            return []
+
+    async def get_reviews(self, secid: str) -> List[Dict]:
+        """Get reviews for a security. Parses if not parsed today."""
+        try:
+            secid_upper = secid.upper()
+
+            # Check if we need to parse (not parsed today)
+            should_parse = await self.db.should_parse_reviews(secid_upper)
+
+            if should_parse:
+                logger.info(f"Parsing reviews for {secid_upper}")
+                # Parse reviews from all sources
+                reviews = await self.reviews_parser.parse_reviews(secid_upper)
+
+                # Save to database
+                if reviews:
+                    await self.db.insert_reviews(secid_upper, reviews)
+                    logger.info(
+                        f"Saved {len(reviews)} reviews for {secid_upper}")
+
+            # Get reviews from database (for current week)
+            db_reviews = await self.db.get_reviews(secid_upper, days=7)
+
+            # Convert to format without source
+            result = [
+                {
+                    'text': review.get('review_text', ''),
+                    'date': review.get('review_date', '')
+                }
+                for review in db_reviews
+            ]
+
+            return result
+        except Exception as e:
+            logger.error(f"Error getting reviews for {secid}: {e}")
             return []
 
 
@@ -463,6 +503,21 @@ async def api_history_sessions_handler(request: web.Request) -> web.Response:
         return web.json_response({'error': str(e)}, status=500)
 
 
+async def api_reviews_handler(request: web.Request) -> web.Response:
+    """API endpoint for reviews"""
+    secid = request.match_info.get('secid', '').upper()
+    if not secid:
+        return web.json_response({'error': 'secid required'}, status=400)
+
+    try:
+        reviews = await analyzer.get_reviews(secid)
+        text = json.dumps(reviews, ensure_ascii=False)
+        return web.Response(text=text, content_type="application/json", charset="utf-8")
+    except Exception as e:
+        logger.error(f"Error getting reviews: {e}")
+        return web.json_response({'error': str(e)}, status=500)
+
+
 def create_app() -> web.Application:
     """Create and configure application"""
     app = web.Application()
@@ -472,13 +527,18 @@ def create_app() -> web.Application:
     app.router.add_get('/', index_handler)
     app.router.add_get('/lang/{lang}', set_lang)
     app.router.add_get('/api/indexes', api_indexes_handler)
-    app.router.add_get('/api/index/{indexid}/securities', api_index_securities_handler)
+    app.router.add_get(
+        '/api/index/{indexid}/securities', api_index_securities_handler)
     app.router.add_get('/api/security/{secid}', api_security_handler)
-    app.router.add_get('/api/security/{secid}/dividends', api_dividends_handler)
+    app.router.add_get(
+        '/api/security/{secid}/dividends', api_dividends_handler)
     app.router.add_get('/api/security/{secid}/coupons', api_coupons_handler)
     app.router.add_get('/api/security/{secid}/yields', api_yields_handler)
-    app.router.add_get('/api/security/{secid}/specification', api_specification_handler)
-    app.router.add_get('/api/security/{secid}/history/sessions', api_history_sessions_handler)
+    app.router.add_get(
+        '/api/security/{secid}/specification', api_specification_handler)
+    app.router.add_get(
+        '/api/security/{secid}/history/sessions', api_history_sessions_handler)
+    app.router.add_get('/api/security/{secid}/reviews', api_reviews_handler)
     app.router.add_get('/api/news', api_news_handler)
     app.router.add_get('/api/search', search_securities_handler)
     app.router.add_post('/api/portfolio/calculate',

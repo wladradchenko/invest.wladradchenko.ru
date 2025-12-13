@@ -11,3 +11,13 @@ TA-Lib>=0.4.25
 jinja2 
 babel
 aiohttp-jinja2
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+pillow
+transformers
+wheel
+argostranslate
+torchvision
+num2words
+
+# MAX_JOBS=4 pip install flash-attn
