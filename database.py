@@ -6,6 +6,7 @@ import logging
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 import json
+import hashlib
 
 
 class Database:
@@ -92,10 +93,27 @@ class Database:
                 )
             """)
 
+            # Reviews table
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS reviews (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    secid TEXT NOT NULL,
+                    review_text TEXT NOT NULL,
+                    review_date DATE NOT NULL,
+                    review_hash TEXT,
+                    source TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_parsed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(secid, review_hash)
+                )
+            """)
+
             # Create indexes for performance
             await db.execute("CREATE INDEX IF NOT EXISTS idx_candles_secid_time ON candles(secid, candle_time)")
             await db.execute("CREATE INDEX IF NOT EXISTS idx_securities_secid ON securities(secid)")
             await db.execute("CREATE INDEX IF NOT EXISTS idx_ml_predictions_secid ON ml_predictions(secid, prediction_date)")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_reviews_secid_date ON reviews(secid, review_date)")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_reviews_last_parsed ON reviews(secid, last_parsed_at)")
 
             await db.commit()
             self.logger.info("Database initialized")
@@ -239,6 +257,78 @@ class Database:
                 SELECT * FROM ml_predictions
                 WHERE secid = ? AND prediction_date >= date('now', '-' || ? || ' days')
                 ORDER BY prediction_date ASC
+            """, (secid, days)) as cursor:
+                rows = await cursor.fetchall()
+                return [dict(row) for row in rows]
+
+    async def should_parse_reviews(self, secid: str) -> bool:
+        """Check if reviews should be parsed (not parsed today)"""
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute("""
+                SELECT MAX(last_parsed_at) as last_parsed
+                FROM reviews
+                WHERE secid = ?
+            """, (secid,)) as cursor:
+                row = await cursor.fetchone()
+                if not row or not row[0]:
+                    return True
+                last_parsed = datetime.fromisoformat(row[0])
+                # Check if last parse was today
+                today = datetime.now().date()
+                return last_parsed.date() < today
+
+    async def insert_reviews(self, secid: str, reviews: List[Dict[str, Any]]):
+        """Insert reviews into database"""
+        async with aiosqlite.connect(self.db_path) as db:
+            for review in reviews:
+                try:
+                    review_text = review.get('text', '').strip()
+                    if not review_text:
+                        continue
+                    
+                    review_date = review.get('date')
+                    if isinstance(review_date, datetime):
+                        review_date_str = review_date.date().isoformat()
+                    elif isinstance(review_date, str):
+                        review_date_str = review_date
+                    else:
+                        review_date_str = datetime.now().date().isoformat()
+                    
+                    # Create hash for uniqueness check
+                    review_hash = hashlib.md5(
+                        f"{secid}:{review_text}:{review_date_str}".encode('utf-8')
+                    ).hexdigest()
+
+                    await db.execute("""
+                        INSERT OR IGNORE INTO reviews 
+                        (secid, review_text, review_date, review_hash, source, last_parsed_at)
+                        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    """, (
+                        secid,
+                        review_text,
+                        review_date_str,
+                        review_hash,
+                        review.get('source', '')
+                    ))
+                except Exception as e:
+                    self.logger.error(f"Error inserting review: {e}")
+            # Update last_parsed_at for all reviews of this secid
+            await db.execute("""
+                UPDATE reviews 
+                SET last_parsed_at = CURRENT_TIMESTAMP
+                WHERE secid = ?
+            """, (secid,))
+            await db.commit()
+
+    async def get_reviews(self, secid: str, days: int = 7) -> List[Dict[str, Any]]:
+        """Get reviews for a security from the last N days"""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("""
+                SELECT review_text, review_date
+                FROM reviews
+                WHERE secid = ? AND review_date >= date('now', '-' || ? || ' days')
+                ORDER BY review_date DESC
             """, (secid, days)) as cursor:
                 rows = await cursor.fetchall()
                 return [dict(row) for row in rows]
