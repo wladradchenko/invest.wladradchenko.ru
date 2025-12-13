@@ -405,6 +405,7 @@ function showIndexActionModal(index, callback) {
 		modal.remove();
 		await addIndex(index.indexid, index.shortname || index.indexid);
 		callback();
+		changeButtonActive('weight');
 	});
 
 	modal.querySelector(".index-action-replace-btn").addEventListener("click", async () => {
@@ -418,6 +419,7 @@ function showIndexActionModal(index, callback) {
 			);
 			card.classList.toggle("active-card", isSelected);
 		});
+		changeButtonActive('weight');
 	});
 
 
@@ -927,16 +929,25 @@ async function groupSecurities(name) {
 				return;
 			}
 
+			const INDICATOR_META = {
+                RSI: { unitType: "scale", unitValue: "%", min: 0, max: 100 },
+                ADX: { unitType: "scale", min: 0, max: 100 },
+                EMA: { unitType: "price", unitValue: "₽" },
+                MACD: { unitType: "price", unitValue: "₽" },
+                BB: { unitType: "price", unitValue: "₽" }
+            };
+
 			["RSI", "MACD", "BB", "EMA", "ADX"].forEach((key) => {
 				const groupContainerKey = document.querySelector(`[data-group="${key}"]`);
 
 				if (!groupContainerKey && data.indicators[key]) {
 					const ind = data.indicators[key];
-					const status = ind.status || null;
-					const rec = ind.recommendation || {};
-					const action = rec.action || null;
-					const description = rec.description || null;
-					const value = ind.value || rec.value || null; // RSI, MACD, BB, EMA, ADX
+					const status = ind.status ?? null;
+					const rec = ind.recommendation ?? {};
+					const action = rec.action ?? null;
+					const description = rec.description ?? null;
+					const value = ind.value ?? rec.value ?? null; // RSI, MACD, BB, EMA, ADX
+					const meta = INDICATOR_META[key] ?? {};
 
 					if (action == null || description == null || value == null) return;
 					clusters[key][status] ??= {
@@ -947,6 +958,7 @@ async function groupSecurities(name) {
 					clusters[key][status]["secids"].push({
 						secid: secid,
 						value: value,
+						unit: meta.unitValue ?? null,
 						weight: weight,
 					});
 				}
@@ -960,9 +972,11 @@ async function groupSecurities(name) {
 				description: summary.description,
 				secids: [],
 			};
+
 			clusters["Summary"][summary.status].secids.push({
 				secid: secid,
-				value: null,
+				value: data.predictions?.length ? (data.predictions.at(-1)['price'] - data.predictions[0]['price']) / data.predictions[0]['price'] : 0,
+				unit: "%",
 				weight: weight,
 			});
 		}
@@ -985,10 +999,10 @@ async function groupSecurities(name) {
 				const clusterHeader = document.createElement("div");
 				clusterHeader.className = "cluster-header";
 				clusterHeader.innerHTML = `
-          <span class="cluster-indicator" style="background: ${clusterColor[status]}"></span>
-          <span data-description="${clusterStatusSecs.action}" class="cluster-name">${translate(clusterStatusSecs.description)}</span>
-          <span class="cluster-count">${clusterStatusSecs.secids.length}</span>
-        `;
+                  <span class="cluster-indicator" style="background: ${clusterColor[status]}"></span>
+                  <span data-description="${clusterStatusSecs.action}" class="cluster-name">${translate(clusterStatusSecs.description)}</span>
+                  <span class="cluster-count">${clusterStatusSecs.secids.length}</span>
+                `;
 				groupContainerKey.appendChild(clusterHeader);
 
 				// Cluster container
@@ -1037,7 +1051,7 @@ async function groupSecurities(name) {
 						const weightEl = clone.querySelector(".security-weight");
 						if (weightEl) {
 							if (sec.value) {
-								weightEl.textContent = `${sec.value.toFixed(2)}`;
+								weightEl.textContent = `${sec.value.toFixed(2)} ${sec?.unit ? sec.unit : ''}`;
 							} else {
 								weightEl.textContent = `N/A`;
 							}
