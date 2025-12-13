@@ -12,6 +12,7 @@ from typing import Dict, List, Optional
 import json
 import aiohttp_jinja2
 import jinja2
+import torch
 from tqdm import tqdm
 
 from database import Database
@@ -53,6 +54,8 @@ class InvestmentAnalyzer:
         self.indicator_analyzer = IndicatorAnalyzer()
         self.cache = CacheManager()
         self.reviews_parser = ReviewsParser()
+        # Track parsing progress: {secid: {'total': int, 'current': int, 'status': str, 'error': str}}
+        self.parsing_progress = {}
 
     async def init(self):
         """Initialize application"""
@@ -210,43 +213,160 @@ class InvestmentAnalyzer:
             logger.error(f"Error getting reviews for {secid}: {e}")
             return True
 
-    async def get_reviews(self, secid: str) -> List[Dict]:
-        """Get reviews for a security. Parses if not parsed today."""
-        try:
-            secid_upper = secid.upper()
+    async def start_parsing_reviews(self, secid: str):
+        """Start parsing reviews in background. Returns immediately."""
+        secid_upper = secid.upper()
 
-            # Check if we need to parse (not parsed today)
+        # Check if already parsing
+        if secid_upper in self.parsing_progress:
+            status = self.parsing_progress[secid_upper].get('status', '')
+            if status in ['parsing', 'analyzing']:
+                return  # Already parsing
+
+        # Initialize progress
+        self.parsing_progress[secid_upper] = {
+            'total': 0,
+            'current': 0,
+            'status': 'starting',
+            'error': None
+        }
+
+        # Start parsing in background
+        asyncio.create_task(self._parse_reviews_background(secid_upper))
+
+    async def _parse_reviews_background(self, secid: str):
+        """Background task for parsing reviews"""
+        secid_upper = secid.upper()
+        try:
+            # Check if we need to parse
             last_parsed, should_parse = await self.db.should_parse_reviews(secid_upper)
 
-            if should_parse:
-                logger.info(f"Parsing reviews for {secid_upper}")
-                # Parse reviews from all sources
-                reviews = await self.reviews_parser.parse_reviews(secid_upper, last_parsed)
-                analysis_reviews = []
-                for review in tqdm(reviews, desc=f"Analysis review of {secid_upper}"):
-                    analysis = await self.text_predictor(text=review.get("text"), img_path=review.get("img"))
+            if not should_parse:
+                self.parsing_progress[secid_upper] = {
+                    'total': 0,
+                    'current': 0,
+                    'status': 'completed',
+                    'error': None
+                }
+                return
+
+            # Update status
+            self.parsing_progress[secid_upper]['status'] = 'parsing'
+            logger.info(f"Parsing reviews for {secid_upper}")
+
+            # Parse reviews from all sources
+            reviews = await self.reviews_parser.parse_reviews(secid_upper, last_parsed)
+
+            if not reviews:
+                self.parsing_progress[secid_upper] = {
+                    'total': 0,
+                    'current': 0,
+                    'status': 'completed',
+                    'error': None
+                }
+                await self.db.update_date_reviews(secid_upper)
+                return
+
+            # Update progress for analysis
+            self.parsing_progress[secid_upper]['total'] = len(reviews)
+            self.parsing_progress[secid_upper]['current'] = 0
+            self.parsing_progress[secid_upper]['status'] = 'analyzing'
+
+            analysis_reviews = []
+            loop = asyncio.get_event_loop()
+
+            for i, review in enumerate(reviews):
+                try:
+                    review_text = review.get("text", "")
+                    if not review_text:
+                        continue
+
+                    # Translate text (async, but fast)
+                    translated_text = await self.text_predictor.translator.translate(review_text, src_lang='Russian', trg_lang='English')
+
+                    # Run neural networks in thread pool to avoid blocking event loop
+                    # This allows progress updates to be visible
+                    analysis = await loop.run_in_executor(
+                        None,
+                        self.text_predictor._analyze_neural_networks_sync,
+                        translated_text,
+                        review.get("img")
+                    )
                     if analysis is not None:
                         analysis_reviews.append({**review, **analysis})
 
-                # Save to database
-                if analysis_reviews:
-                    await self.db.insert_reviews(secid_upper, reviews)
-                    logger.info(f"Saved {len(reviews)} reviews for {secid_upper}")
-                if not analysis_reviews and reviews:
-                    await self.db.update_date_reviews(secid_upper)
-                    logger.info(f"Not interest reviews, but updated date for {secid_upper}")
+                    # Update progress after each analysis
+                    self.parsing_progress[secid_upper]['current'] = i + 1
+                    # Give event loop a chance to process other tasks (like progress requests)
+                    await asyncio.sleep(0.01)
+                except Exception as e:
+                    logger.error(f"Error analyzing review {i}: {e}")
+                    # Still update progress even on error
+                    self.parsing_progress[secid_upper]['current'] = i + 1
+                    await asyncio.sleep(0.01)
+                    continue
+            else:
+                if torch.cuda.is_available():  # Clear CUDA cache
+                    torch.cuda.empty_cache()
+
+            # Save to database
+            if analysis_reviews:
+                await self.db.insert_reviews(secid_upper, analysis_reviews)
+                logger.info(f"Saved {len(analysis_reviews)} analyzed reviews for {secid_upper}")
+            elif reviews:
+                await self.db.update_date_reviews(secid_upper)
+                logger.info(f"No analyzed reviews, but updated date for {secid_upper}")
+
+            # Mark as completed
+            self.parsing_progress[secid_upper]['status'] = 'completed'
+
+        except Exception as e:
+            logger.error(f"Error parsing reviews for {secid_upper}: {e}")
+            self.parsing_progress[secid_upper] = {
+                'total': 0,
+                'current': 0,
+                'status': 'error',
+                'error': str(e)
+            }
+
+    def get_parsing_progress(self, secid: str) -> Dict:
+        """Get parsing progress for a security"""
+        secid_upper = secid.upper()
+        if secid_upper not in self.parsing_progress:
+            return {
+                'total': 0,
+                'current': 0,
+                'status': 'idle',
+                'error': None
+            }
+        return self.parsing_progress[secid_upper].copy()
+
+    async def get_reviews(self, secid: str) -> List[Dict]:
+        """Get reviews for a security from database only (no parsing)"""
+        try:
+            secid_upper = secid.upper()
 
             # Get reviews from database (for current week)
             db_reviews = await self.db.get_reviews(secid_upper, days=7)
 
-            # Convert to format without source
-            result = [
-                {
+            # Convert to format with all sentiment data
+            result = []
+            for review in db_reviews:
+                result.append({
                     'text': review.get('review_text', ''),
-                    'date': review.get('review_date', '')
-                }
-                for review in db_reviews
-            ]
+                    'date': review.get('review_date', ''),
+                    'positive': review.get('positive', 0),
+                    'neutral': review.get('neutral', 0),
+                    'negative': review.get('negative', 0),
+                    'anger': review.get('anger', 0),
+                    'anticipation': review.get('anticipation', 0),
+                    'disgust': review.get('disgust', 0),
+                    'fear': review.get('fear', 0),
+                    'joy': review.get('joy', 0),
+                    'sadness': review.get('sadness', 0),
+                    'surprise': review.get('surprise', 0),
+                    'trust': review.get('trust', 0),
+                })
 
             return result
         except Exception as e:
@@ -554,6 +674,34 @@ async def api_should_parse_reviews_handler(request: web.Request) -> web.Response
         return web.json_response({'error': str(e)}, status=500)
 
 
+async def api_reviews_progress_handler(request: web.Request) -> web.Response:
+    """API endpoint for parsing progress"""
+    secid = request.match_info.get('secid', '').upper()
+    if not secid:
+        return web.json_response({'error': 'secid required'}, status=400)
+
+    try:
+        progress = analyzer.get_parsing_progress(secid)
+        return web.json_response(progress, status=200)
+    except Exception as e:
+        logger.error(f"Error getting progress: {e}")
+        return web.json_response({'error': str(e)}, status=500)
+
+
+async def api_reviews_start_parsing_handler(request: web.Request) -> web.Response:
+    """API endpoint to start parsing reviews"""
+    secid = request.match_info.get('secid', '').upper()
+    if not secid:
+        return web.json_response({'error': 'secid required'}, status=400)
+
+    try:
+        await analyzer.start_parsing_reviews(secid)
+        return web.json_response({'status': 'started'}, status=200)
+    except Exception as e:
+        logger.error(f"Error starting parsing: {e}")
+        return web.json_response({'error': str(e)}, status=500)
+
+
 def create_app() -> web.Application:
     """Create and configure application"""
     app = web.Application()
@@ -563,18 +711,28 @@ def create_app() -> web.Application:
     app.router.add_get('/', index_handler)
     app.router.add_get('/lang/{lang}', set_lang)
     app.router.add_get('/api/indexes', api_indexes_handler)
-    app.router.add_get('/api/index/{indexid}/securities', api_index_securities_handler)
+    app.router.add_get(
+        '/api/index/{indexid}/securities', api_index_securities_handler)
     app.router.add_get('/api/security/{secid}', api_security_handler)
-    app.router.add_get('/api/security/{secid}/dividends', api_dividends_handler)
+    app.router.add_get(
+        '/api/security/{secid}/dividends', api_dividends_handler)
     app.router.add_get('/api/security/{secid}/coupons', api_coupons_handler)
     app.router.add_get('/api/security/{secid}/yields', api_yields_handler)
-    app.router.add_get('/api/security/{secid}/specification', api_specification_handler)
-    app.router.add_get('/api/security/{secid}/history/sessions', api_history_sessions_handler)
+    app.router.add_get(
+        '/api/security/{secid}/specification', api_specification_handler)
+    app.router.add_get(
+        '/api/security/{secid}/history/sessions', api_history_sessions_handler)
     app.router.add_get('/api/security/{secid}/reviews', api_reviews_handler)
-    app.router.add_get('/api/security/{secid}/reviews/meta', api_should_parse_reviews_handler)
+    app.router.add_get(
+        '/api/security/{secid}/reviews/meta', api_should_parse_reviews_handler)
+    app.router.add_get(
+        '/api/security/{secid}/reviews/progress', api_reviews_progress_handler)
+    app.router.add_post(
+        '/api/security/{secid}/reviews/start', api_reviews_start_parsing_handler)
     app.router.add_get('/api/news', api_news_handler)
     app.router.add_get('/api/search', search_securities_handler)
-    app.router.add_post('/api/portfolio/calculate', api_portfolio_calculate_handler)
+    app.router.add_post('/api/portfolio/calculate',
+                        api_portfolio_calculate_handler)
 
     # Static files
     app.router.add_static('/static/', path='static/', name='static')

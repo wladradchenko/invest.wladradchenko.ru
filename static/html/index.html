@@ -347,8 +347,29 @@
                     </div>
 
                     <!-- Comments -->
-                    <div style="background: #1e1e1e8f;" id="modalComments" class="backdrop-blur-xl border border-white border-opacity-10 rounded-xl p-6 hidden">
+                    <div style="background: #1e1e1e8f; position: relative;" id="modalComments" class="backdrop-blur-xl border border-white border-opacity-10 rounded-xl p-6 hidden">
                         <h3 class="text-white text-lg font-semibold mb-4">{{ _('Overall Sentiment')}}</h3>
+                        <!-- Loading overlay for parsing -->
+                        <div id="modalCommentsLoadingOverlay" class="hidden absolute relative inset-0 rounded-xl flex flex-col items-center justify-center z-10">
+                            <div class="text-white text-center p-6">
+                                <p class="text-lg mb-4">{{ _('Sentiment analysis may take a very long time for one security')}}</p>
+                                <button id="modalCommentsStartParsing" class="bg-violet hover:bg-violet-dark text-white font-bold py-2 px-6 rounded-lg mb-4">
+                                    {{ _('Analyze')}}
+                                </button>
+                                <div id="modalCommentsProgress" class="hidden mt-4">
+                                    <div class="w-full bg-gray-700 rounded-full h-4 mb-2">
+                                        <div id="modalCommentsProgressBar" style="background: var(--primary-color);" class="h-4 rounded-full transition-all duration-300" style="width: 0%"></div>
+                                    </div>
+                                    <p id="modalCommentsProgressText" class="text-sm text-gray-300">0 / 0</p>
+                                    <p id="modalCommentsProgressStatus" class="text-sm text-gray-400 mt-2"></p>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Chart container -->
+                        <div id="modalCommentsChartContainer" class="mb-4 hidden" style="height: 400px;">
+                            <canvas id="modalCommentsChart"></canvas>
+                        </div>
+                        <!-- Content (hidden initially, shown after data loaded) -->
                         <div class="grid grid-cols-2 md:grid-cols-4 gap-3" id="modalCommentsContent"></div>
                     </div>
           

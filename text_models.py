@@ -31,8 +31,9 @@ class SentimentAnalyzer:
 
     def analyze(self, text: str) -> dict:
         inputs = self.tokenizer(text, return_tensors="pt", truncation=True, max_length=512).to(self.device)
-        outputs = self.model(**inputs)
-        probs = F.softmax(outputs.logits, dim=-1)[0]  # shape: [3]
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+            probs = F.softmax(outputs.logits, dim=-1)[0]  # shape: [3]
         # 0=negative, 1=neutral, 2=positive
         return {"negative": round(probs[0].item(), 4), "neutral": round(probs[1].item(), 4), "positive": round(probs[2].item(), 4)}
 
@@ -193,8 +194,8 @@ class SmolVLM2:
 class TextAnalyser:
     def __init__(self, device="cuda"):
         self.llm_analyzer = SmolVLM2(device)
-        self.sentiment_analyzer = SentimentAnalyzer(device=device)
-        self.emotion_analyzer = EmotionAnalyzer(device=device)
+        self.sentiment_analyzer = SentimentAnalyzer(device=device)  # TODO test on CPU
+        self.emotion_analyzer = EmotionAnalyzer(device=device)  # TODO test on CPU
         self.translator = Translate()
 
     async def __call__(self, text: str, img_path: str = None) -> Optional[dict]:
@@ -214,6 +215,36 @@ class TextAnalyser:
         positive = prediction.get("positive")
         neutral = prediction.get("neutral")
 
+        emotion = self.emotion_analyzer.analyze(analys)
+        if positive == negative or neutral > 0.5:
+            return emotion
+        if negative > 0.5 or negative > positive:
+            emotion["negative"] = negative
+            return emotion
+        emotion["positive"] = positive
+        return emotion
+
+    def _analyze_neural_networks_sync(self, text: str, img_path: str = None) -> Optional[dict]:
+        """Synchronous version of neural network analysis (for thread pool execution)"""
+        if not text:
+            return None
+
+        # Process image if provided
+        if img_path and os.path.exists(img_path):
+            text += self.llm_analyzer.process_image_analyser(img_path)
+
+        # Analyze text with LLM
+        analys = self.llm_analyzer.process_text_analyser(str(text))
+        if not self.process_text_sentiment(analys):
+            return None
+
+        # Sentiment analysis
+        prediction = self.sentiment_analyzer.analyze(analys)
+        negative = prediction.get("negative")
+        positive = prediction.get("positive")
+        neutral = prediction.get("neutral")
+
+        # Emotion analysis
         emotion = self.emotion_analyzer.analyze(analys)
         if positive == negative or neutral > 0.5:
             return emotion

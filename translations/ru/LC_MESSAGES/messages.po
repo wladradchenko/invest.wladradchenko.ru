@@ -290,3 +290,11 @@ msgstr "Прогноз доходности портфеля на 7 дней"
 msgid "by"
 msgstr ""
 
+msgid "Sentiment analysis may take a very long time for one security"
+msgstr "Анализ настроений покупателей по одной ценной бумаге может занимать много времени"
+
+msgid "Analyze"
+msgstr "Анализировать"
+
+msgid "Overall Sentiment"
+msgstr "Общее настроение"
