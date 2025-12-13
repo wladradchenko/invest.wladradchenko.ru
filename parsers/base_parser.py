@@ -17,7 +17,8 @@ from io import BytesIO
 class BaseParser(ABC):
     """Base class for review parsers"""
     DAYS = 7
-    MEDIA_PATH = os.path.join('media', 'img')
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    MEDIA_PATH = os.path.join(BASE_DIR, 'media', 'img')
     USE_IMAGE = True
 
     def __init__(self):

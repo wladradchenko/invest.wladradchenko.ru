@@ -25,6 +25,8 @@ env/
 .cache/
 cache/
 translate/
+media/
+model/
 test.py
 
 # =========================

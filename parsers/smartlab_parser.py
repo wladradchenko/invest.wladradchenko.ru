@@ -14,14 +14,23 @@ class SmartLabParser(BaseParser):
     
     BASE_URL = "https://smart-lab.ru"
 
-    async def parse_reviews(self, secid: str) -> List[Dict]:
+    async def parse_reviews(self, secid: str, start_date=None) -> List[Dict]:
         """Parse reviews from smart-lab.ru"""
         reviews = []
         duplicate_comments = []
         secid_lower = secid.upper()
         today = datetime.now().date()
 
-        dates_list = [(today - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(self.DAYS, 0, -1)]
+        if start_date is None:
+            dates_list = [(today - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(self.DAYS, 0, -1)]
+        else:
+            target_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+            delta_days = (today - target_date).days
+            if delta_days < 0:
+                print("Can not be future date")
+                return []
+            dates_list = [(today - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(delta_days + 1)]
+
         for date in dates_list:
             url = f"{self.BASE_URL}/forum/{secid_lower}/{date}"
 

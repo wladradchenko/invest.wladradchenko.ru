@@ -1,16 +1,25 @@
 import os
 import aiohttp
 import pathlib
+import logging
 import argostranslate.package
 import argostranslate.translate  # pip install argostranslate
 
 
+logging.getLogger("argostranslate").setLevel(logging.WARNING)
+logging.getLogger("argostranslate.utils").setLevel(logging.WARNING)
+
+logging.getLogger("stanza").setLevel(logging.WARNING)
+logging.getLogger("stanza.pipeline").setLevel(logging.WARNING)
+
+
 class Translate:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    MODEL_PATH = os.path.join(BASE_DIR, "translate")
+
     def __init__(self):
-        root_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        self.model_path = os.path.join(root_path, "translate")
-        if not os.path.exists(self.model_path):
-            os.makedirs(self.model_path, exist_ok=True)
+        if not os.path.exists(self.MODEL_PATH):
+            os.makedirs(self.MODEL_PATH, exist_ok=True)
 
         self.model_urls = {
             "Russian_English": "https://argos-net.com/v1/translate-ru_en-1_9.argosmodel",
@@ -82,7 +91,7 @@ class Translate:
 
     async def install_package(self, language: str) -> bool:
         download_link = self.model_urls.get(language)
-        download_path = os.path.join(self.model_path, self.model_filenames.get(language))
+        download_path = os.path.join(self.MODEL_PATH, self.model_filenames.get(language))
         if await self.check_download_size(download_path, download_link):
             package_path = pathlib.Path(download_path)
             argostranslate.package.install_from_path(package_path)
