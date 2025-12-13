@@ -12,10 +12,12 @@ from typing import Dict, List, Optional
 import json
 import aiohttp_jinja2
 import jinja2
+from tqdm import tqdm
 
 from database import Database
 from moex_api import MOEXClient
 from ml_models import MLPredictor
+from text_models import TextAnalyser
 from indicators import IndicatorAnalyzer
 from cache import CacheManager
 from parsers import ReviewsParser
@@ -45,6 +47,8 @@ class InvestmentAnalyzer:
 
     def __init__(self):
         self.db = Database()
+        print("Loading neural models before start")
+        self.text_predictor = TextAnalyser()
         self.ml_predictor = MLPredictor()
         self.indicator_analyzer = IndicatorAnalyzer()
         self.cache = CacheManager()
@@ -195,24 +199,42 @@ class InvestmentAnalyzer:
             logger.error(f"Error getting index securities: {e}")
             return []
 
+    async def should_parse_reviews(self, secid: str):
+        try:
+            secid_upper = secid.upper()
+
+            # Check if we need to parse (not parsed today)
+            _, should_parse = await self.db.should_parse_reviews(secid_upper)
+            return should_parse
+        except Exception as e:
+            logger.error(f"Error getting reviews for {secid}: {e}")
+            return True
+
     async def get_reviews(self, secid: str) -> List[Dict]:
         """Get reviews for a security. Parses if not parsed today."""
         try:
             secid_upper = secid.upper()
 
             # Check if we need to parse (not parsed today)
-            should_parse = await self.db.should_parse_reviews(secid_upper)
+            last_parsed, should_parse = await self.db.should_parse_reviews(secid_upper)
 
             if should_parse:
                 logger.info(f"Parsing reviews for {secid_upper}")
                 # Parse reviews from all sources
-                reviews = await self.reviews_parser.parse_reviews(secid_upper)
+                reviews = await self.reviews_parser.parse_reviews(secid_upper, last_parsed)
+                analysis_reviews = []
+                for review in tqdm(reviews, desc=f"Analysis review of {secid_upper}"):
+                    analysis = await self.text_predictor(text=review.get("text"), img_path=review.get("img"))
+                    if analysis is not None:
+                        analysis_reviews.append({**review, **analysis})
 
                 # Save to database
-                if reviews:
+                if analysis_reviews:
                     await self.db.insert_reviews(secid_upper, reviews)
-                    logger.info(
-                        f"Saved {len(reviews)} reviews for {secid_upper}")
+                    logger.info(f"Saved {len(reviews)} reviews for {secid_upper}")
+                if not analysis_reviews and reviews:
+                    await self.db.update_date_reviews(secid_upper)
+                    logger.info(f"Not interest reviews, but updated date for {secid_upper}")
 
             # Get reviews from database (for current week)
             db_reviews = await self.db.get_reviews(secid_upper, days=7)
@@ -518,6 +540,20 @@ async def api_reviews_handler(request: web.Request) -> web.Response:
         return web.json_response({'error': str(e)}, status=500)
 
 
+async def api_should_parse_reviews_handler(request: web.Request) -> web.Response:
+    """API endpoint for should parse reviews"""
+    secid = request.match_info.get('secid', '').upper()
+    if not secid:
+        return web.json_response({'error': 'secid required'}, status=400)
+
+    try:
+        should_parse = await analyzer.should_parse_reviews(secid)
+        return web.json_response({'should_parse': should_parse}, status=200)
+    except Exception as e:
+        logger.error(f"Error getting reviews: {e}")
+        return web.json_response({'error': str(e)}, status=500)
+
+
 def create_app() -> web.Application:
     """Create and configure application"""
     app = web.Application()
@@ -527,22 +563,18 @@ def create_app() -> web.Application:
     app.router.add_get('/', index_handler)
     app.router.add_get('/lang/{lang}', set_lang)
     app.router.add_get('/api/indexes', api_indexes_handler)
-    app.router.add_get(
-        '/api/index/{indexid}/securities', api_index_securities_handler)
+    app.router.add_get('/api/index/{indexid}/securities', api_index_securities_handler)
     app.router.add_get('/api/security/{secid}', api_security_handler)
-    app.router.add_get(
-        '/api/security/{secid}/dividends', api_dividends_handler)
+    app.router.add_get('/api/security/{secid}/dividends', api_dividends_handler)
     app.router.add_get('/api/security/{secid}/coupons', api_coupons_handler)
     app.router.add_get('/api/security/{secid}/yields', api_yields_handler)
-    app.router.add_get(
-        '/api/security/{secid}/specification', api_specification_handler)
-    app.router.add_get(
-        '/api/security/{secid}/history/sessions', api_history_sessions_handler)
+    app.router.add_get('/api/security/{secid}/specification', api_specification_handler)
+    app.router.add_get('/api/security/{secid}/history/sessions', api_history_sessions_handler)
     app.router.add_get('/api/security/{secid}/reviews', api_reviews_handler)
+    app.router.add_get('/api/security/{secid}/reviews/meta', api_should_parse_reviews_handler)
     app.router.add_get('/api/news', api_news_handler)
     app.router.add_get('/api/search', search_securities_handler)
-    app.router.add_post('/api/portfolio/calculate',
-                        api_portfolio_calculate_handler)
+    app.router.add_post('/api/portfolio/calculate', api_portfolio_calculate_handler)
 
     # Static files
     app.router.add_static('/static/', path='static/', name='static')

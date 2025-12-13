@@ -18,7 +18,7 @@ class ReviewsParser:
             PulseParser()
         ]
     
-    async def parse_reviews(self, secid: str) -> List[Dict]:
+    async def parse_reviews(self, secid: str, start_date=None) -> List[Dict]:
         """
         Parse reviews from all sources for a security.
         Returns list of {text, date} without source information.
@@ -29,10 +29,10 @@ class ReviewsParser:
         for parser in self.parsers:
             try:
                 async with parser:
-                    reviews = await parser.parse_reviews(secid)
+                    reviews = await parser.parse_reviews(secid, start_date)
                     # Remove source from reviews (as per requirement)
-                    for review in reviews:
-                        review.pop('source', None)
+                    # for review in reviews:
+                    #     review.pop('source', None)
                     all_reviews.extend(reviews)
             except Exception as e:
                 self.logger.error(f"Error parsing from {parser.__class__.__name__}: {e}")

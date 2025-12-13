@@ -99,8 +99,20 @@ class Database:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     secid TEXT NOT NULL,
                     review_text TEXT NOT NULL,
+                    review_img TEXT,
                     review_date DATE NOT NULL,
                     review_hash TEXT,
+                    positive FLOAT DEFAULT 0, 
+                    neutral FLOAT DEFAULT 0, 
+                    negative FLOAT DEFAULT 0, 
+                    anger FLOAT DEFAULT 0, 
+                    anticipation FLOAT DEFAULT 0, 
+                    disgust FLOAT DEFAULT 0, 
+                    fear FLOAT DEFAULT 0, 
+                    joy FLOAT DEFAULT 0, 
+                    sadness FLOAT DEFAULT 0, 
+                    surprise FLOAT DEFAULT 0, 
+                    trust FLOAT DEFAULT 0,
                     source TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     last_parsed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -261,7 +273,7 @@ class Database:
                 rows = await cursor.fetchall()
                 return [dict(row) for row in rows]
 
-    async def should_parse_reviews(self, secid: str) -> bool:
+    async def should_parse_reviews(self, secid: str) -> tuple:
         """Check if reviews should be parsed (not parsed today)"""
         async with aiosqlite.connect(self.db_path) as db:
             async with db.execute("""
@@ -271,11 +283,11 @@ class Database:
             """, (secid,)) as cursor:
                 row = await cursor.fetchone()
                 if not row or not row[0]:
-                    return True
+                    return None, True
                 last_parsed = datetime.fromisoformat(row[0])
                 # Check if last parse was today
                 today = datetime.now().date()
-                return last_parsed.date() < today
+                return last_parsed.date(), last_parsed.date() < today
 
     async def insert_reviews(self, secid: str, reviews: List[Dict[str, Any]]):
         """Insert reviews into database"""
@@ -285,7 +297,8 @@ class Database:
                     review_text = review.get('text', '').strip()
                     if not review_text:
                         continue
-                    
+
+                    review_img = review.get('img', '').strip() if review.get('img') else ''
                     review_date = review.get('date')
                     if isinstance(review_date, datetime):
                         review_date_str = review_date.date().isoformat()
@@ -295,19 +308,29 @@ class Database:
                         review_date_str = datetime.now().date().isoformat()
                     
                     # Create hash for uniqueness check
-                    review_hash = hashlib.md5(
-                        f"{secid}:{review_text}:{review_date_str}".encode('utf-8')
-                    ).hexdigest()
+                    review_hash = hashlib.md5(f"{secid}:{review_text}:{review_date_str}".encode('utf-8')).hexdigest()
 
                     await db.execute("""
                         INSERT OR IGNORE INTO reviews 
-                        (secid, review_text, review_date, review_hash, source, last_parsed_at)
-                        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                        (secid, review_text, review_img, review_date, review_hash, positive, neutral, negative, anger, anticipation, disgust, fear, joy, sadness, surprise, trust, source, last_parsed_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                     """, (
                         secid,
                         review_text,
+                        review_img,
                         review_date_str,
                         review_hash,
+                        review.get('positive', 0),
+                        review.get('neutral', 0),
+                        review.get('negative', 0),
+                        review.get('anger', 0),
+                        review.get('anticipation', 0),
+                        review.get('disgust', 0),
+                        review.get('fear', 0),
+                        review.get('joy', 0),
+                        review.get('sadness', 0),
+                        review.get('surprise', 0),
+                        review.get('trust', 0),
                         review.get('source', '')
                     ))
                 except Exception as e:
@@ -320,12 +343,23 @@ class Database:
             """, (secid,))
             await db.commit()
 
+    async def update_date_reviews(self, secid: str):
+        """Insert reviews into database"""
+        async with aiosqlite.connect(self.db_path) as db:
+            # Update last_parsed_at for all reviews of this secid
+            await db.execute("""
+                            UPDATE reviews 
+                            SET last_parsed_at = CURRENT_TIMESTAMP
+                            WHERE secid = ?
+                        """, (secid,))
+            await db.commit()
+
     async def get_reviews(self, secid: str, days: int = 7) -> List[Dict[str, Any]]:
         """Get reviews for a security from the last N days"""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("""
-                SELECT review_text, review_date
+                SELECT *
                 FROM reviews
                 WHERE secid = ? AND review_date >= date('now', '-' || ? || ' days')
                 ORDER BY review_date DESC

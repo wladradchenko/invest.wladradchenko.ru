@@ -19,5 +19,6 @@ wheel
 argostranslate
 torchvision
 num2words
+accelerate
 
 # MAX_JOBS=4 pip install flash-attn
