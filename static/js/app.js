@@ -1619,9 +1619,7 @@ async function loadModalComments(secid) {
       if (activeParsingSecid === secid) {
         // Already parsing, show progress
         startBtn.classList.add("hidden");
-        overlay
-          .querySelector("#modalCommentsProgress")
-          .classList.remove("hidden");
+        overlay.querySelector("#modalCommentsProgress").classList.remove("hidden");
         startProgressTracking(secid);
       } else {
         // Show start button
@@ -1681,9 +1679,7 @@ function startProgressTracking(secid) {
 
 async function updateProgress(secid) {
   try {
-    const resp = await fetch(
-      `${API_BASE}/api/security/${secid}/reviews/progress`
-    );
+    const resp = await fetch(`${API_BASE}/api/security/${secid}/reviews/progress`);
     const progress = await resp.json();
 
     const progressBar = document.querySelector("#modalCommentsProgressBar");
@@ -1732,15 +1728,12 @@ async function loadAndDisplayReviews(secid) {
     const reviews = await resp.json();
 
     if (!reviews || reviews.length === 0) {
-      document.querySelector("#modalCommentsContent").innerHTML =
-        '<p class="text-gray-400">' + translate("No reviews found") + "</p>";
+      document.querySelector("#modalCommentsContent").innerHTML = '<p class="text-gray-400">' + translate("No reviews found") + "</p>";
       return;
     }
 
     // Hide overlay
-    document
-      .querySelector("#modalCommentsLoadingOverlay")
-      .classList.add("hidden");
+    document.querySelector("#modalCommentsLoadingOverlay").classList.add("hidden");
 
     // Show chart
     const chartContainer = document.querySelector("#modalCommentsChartContainer");
@@ -1754,14 +1747,47 @@ async function loadAndDisplayReviews(secid) {
   }
 }
 
+function filterSentimentBySide(btn, side) {
+  const content = document.querySelector("#modalCommentsRates");
+  const items = content.querySelectorAll("[data-side='" + side + "']");
+  items.forEach((item) => {
+    if (btn.classList.contains("line-through")) {
+      item.classList.remove("opacity-20");
+    } else {
+      item.classList.add("opacity-20");
+    }
+  });
+  btn.classList.toggle("line-through");
+}
+
+function filterSentimentByDirection(btn, direction) {
+  const content = document.querySelector("#modalCommentsRates");
+  const items = content.querySelectorAll("[data-direction='" + direction + "']");
+  items.forEach((item) => {
+    if (btn.classList.contains("line-through")) {
+      item.classList.remove("opacity-20");
+    } else {
+      item.classList.add("opacity-20");
+    }
+  });
+  btn.classList.toggle("line-through");
+}
+
 function renderSentimentChart(reviews) {
   const canvas = document.querySelector("#modalCommentsChart");
-  if (!canvas) return;
+  const container = document.querySelector("#modalCommentsContainer");
+  const content = document.querySelector("#modalCommentsContent");
+  const rates = document.querySelector("#modalCommentsRates");
+  const template = document.getElementById("sentiment-score-template");
+
+  if (!canvas || !container || !content || !rates || !template) return;
 
   // Destroy existing chart
   if (commentsChart) {
     commentsChart.destroy();
   }
+
+  container.classList.remove("hidden");
 
   // Prepare data - group by date and calculate averages
   const dataByDate = {};
@@ -1808,14 +1834,259 @@ function renderSentimentChart(reviews) {
   // Sort dates
   const sortedDates = Object.keys(dataByDate).sort();
 
+  // Caclulate sentiment ratios for each day
+  const sentimentKeys = [
+    "positive",
+    "neutral",
+    "negative",
+  ];
+
+  const emotionKeys = [
+    "anger",
+    "anticipation",
+    "disgust",
+    "fear",
+    "joy",
+    "sadness",
+    "surprise",
+    "trust",
+  ];
+
+  const sum = (arr) => arr.reduce((a, b) => a + b, 0);
+
+  const calcRatiosByKeys = (dayData, keys, scale = 1) => {
+    const sums = {};
+    let total = 0;
+
+    keys.forEach((key) => {
+      const value = sum(dayData[key] || []);
+      sums[key] = value;
+      total += value;
+    });
+
+    if (total === 0) {
+      return Object.fromEntries(
+        keys.map((key) => [key, 0])
+      );
+    }
+
+    return Object.fromEntries(
+      keys.map((key) => [key, Math.round((sums[key] / total) * scale * 10) / 10])
+    );
+  };
+
+  const hasNonZeroSentiment = (dayData, keys) => {
+    return keys.some(
+      (key) => dayData[key]?.some((value) => value !== 0)
+    );
+  };
+
+  const startDate = sortedDates.find(
+    (date) => hasNonZeroSentiment(dataByDate[date], sentimentKeys)
+  );
+
+  const endDate = sortedDates.findLast(
+    (date) => hasNonZeroSentiment(dataByDate[date], sentimentKeys)
+  );
+
   // Calculate averages
-  const avg = (arr) =>
-    arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+  const ratios = Object.fromEntries(
+    Object.entries(dataByDate).map(([date, dayData]) => [
+      date,
+      {
+        sentiment: calcRatiosByKeys(dayData, sentimentKeys, 10),
+        emotions: calcRatiosByKeys(dayData, emotionKeys, 10),
+      },
+    ])
+  );
+  const avg = (arr) => arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+
+  const startTrendSentiment = ratios[startDate]?.sentiment || null;
+  const startTrendEmotions = ratios[startDate]?.emotions || null;
+  const endTrendSentiment = ratios[endDate]?.sentiment || null;
+  const endTrendEmotions = ratios[endDate]?.emotions || null;
+  
+  // Functiions for TrendEmotions
+  const EMOTION_AXES = [
+    { pos: "joy", neg: "sadness" },
+    { pos: "trust", neg: "disgust" },
+    { pos: "anticipation", neg: "surprise" },
+    { pos: "fear", neg: "anger" },
+  ];
+
+  const getDominantEmotion = (emotions, { pos, neg }) => {
+    if (!emotions) {
+      return { label: "Neutral", score: 0 };
+    }
+  
+    if (pos in emotions) {
+      return {
+        label: pos.charAt(0).toUpperCase() + pos.slice(1),
+        score: emotions[pos],
+      };
+    }
+  
+    if (neg in emotions) {
+      return {
+        label: neg.charAt(0).toUpperCase() + neg.slice(1),
+        score: emotions[neg],
+      };
+    }
+  
+    return { label: "Neutral", score: 0 };
+  };
+
+  const getSentimentLabelAndScore = (sentiment) => {
+    if (!sentiment) {
+      return { label: "Hold", score: 0 };
+    }
+    else if ("positive" in sentiment) {
+      return { label: "Buy", score: sentiment.positive };
+    }
+    else if ("negative" in sentiment) {
+      return { label: "Sell", score: sentiment.negative };
+    }
+    return {
+      label: "Hold",
+      score: sentiment.neutral ?? 0,
+    };
+  };
+
+  const getScoreStyles = (score, max = 10) => {
+    const normalize = (value, max = 10) => Math.min(Math.abs(value) / max, 1);
+    const strength = normalize(score, max); // 0..1
+  
+    if (score > 0) {
+      return {
+        background: `rgba(34, 197, 94, ${0.1 + Math.min(strength * 0.2, 0.2)})`,
+        border: `rgba(34, 197, 94, ${0.3 + Math.min(strength * 0.3, 0.3)})`,
+      };
+    }
+  
+    if (score < 0) {
+      return {
+        background: `rgba(239, 68, 68, ${0.1 + Math.min(strength * 0.24, 0.2)})`,
+        border: `rgba(239, 68, 68, ${0.3 + Math.min(strength * 0.3, 0.3)})`,
+      };
+    }
+  
+    return {
+      background: "rgba(234, 179, 8, 0.15)",
+      border: "rgba(234, 179, 8, 0.4)",
+    };
+  };
+  
+  
+  const renderSide = (clone, side, { label, score }) => {
+    const nameEl = clone.querySelector(`[data-key="${side}-name"]`);
+    const scoreEl = clone.querySelector(`[data-key="${side}-score"]`);
+    nameEl.setAttribute("data-side", side);
+    scoreEl.setAttribute("data-side", side);
+  
+    nameEl.textContent = translate(label);
+    scoreEl.textContent = score;
+  
+    const styles = getScoreStyles(score);
+    scoreEl.style.backgroundColor = styles.background;
+    scoreEl.style.borderColor = styles.border;
+  };
+
+  const renderBipolarBlock = ({
+    getValue,
+    startData,
+    endData,
+  }) => {
+    const clone = template.content.cloneNode(true);
+  
+    const start = getValue(startData);
+    const end = getValue(endData);
+
+    if (start.score === 0 && end.score === 0) {
+      return;
+    }
+    if (start.score > end.score) {
+      clone.querySelector("div").setAttribute("data-direction", "down");
+    } else if (start.score < end.score) {
+      clone.querySelector("div").setAttribute("data-direction", "up");
+    } else {
+      clone.querySelector("div").setAttribute("data-direction", "neutral");
+    }
+    renderSide(clone, "start", start);
+    renderSide(clone, "end", end);
+    rates.appendChild(clone);
+  };
+
+
+  const computeTrendEmotions = (emotions) => {
+    if (!emotions) return null;
+  
+    const appraisal = {};
+  
+    EMOTION_AXES.forEach(({ pos, neg }) => {
+      const diff = (emotions[pos] || 0) - (emotions[neg] || 0);
+  
+      if (diff > 0) {
+        appraisal[pos] = Math.round(diff * 10) / 10;
+      } else if (diff < 0) {
+        appraisal[neg] =  Math.round(diff * 10) / 10;
+      }
+      // diff === 0 → скрываем
+    });
+    return appraisal;
+  };
+  
+
+  // Functiions for TrendSentiment
+  const computeTrendSentiment = (sentiment) => {
+    if (!sentiment) return null;
+
+    const { positive = 0, neutral = 0, negative = 0 } = sentiment;
+
+    if (neutral > positive && neutral > negative) {
+      // Neutral sentiment dominates
+      return { neutral };
+    } else {
+      const diff = positive - negative;
+      if (diff > 0) {
+        return { positive: diff };
+      } else if (diff < 0) {
+        return { negative: Math.round(diff * 10) / 10 };
+      } else {
+        return { neutral: 0 }; // diff === 0
+      }
+    }
+  };
+
+
+  // Apply to start and end
+  const trendStartEmotions = computeTrendEmotions(startTrendEmotions);
+  const trendEndEmotions = computeTrendEmotions(endTrendEmotions);
+
+  const trendStartSentiment = computeTrendSentiment(startTrendSentiment);
+  const trendEndSentiment = computeTrendSentiment(endTrendSentiment);
+  
+  renderBipolarBlock({
+    getValue: getSentimentLabelAndScore,
+    startData: trendStartSentiment,
+    endData: trendEndSentiment,
+  });
+
+  EMOTION_AXES.forEach((axis) => {
+    renderBipolarBlock({
+      getValue: (data) => getDominantEmotion(data, axis),
+      startData: trendStartEmotions,
+      endData: trendEndEmotions,
+    });
+  });
+
+  const filteredDates = sortedDates.filter(
+    (date) => date >= startDate && date <= endDate
+  );
 
   const datasets = [
     {
       label: translate("Positive"),
-      data: sortedDates.map((date) => avg(dataByDate[date].positive)),
+      data: filteredDates.map((date) => ratios[date].sentiment.positive),
       borderColor: "rgb(34, 197, 94)",
       backgroundColor: "rgba(34, 197, 94, 0.1)",
       tension: 0.1,
@@ -1823,7 +2094,7 @@ function renderSentimentChart(reviews) {
     },
     {
       label: translate("Neutral"),
-      data: sortedDates.map((date) => avg(dataByDate[date].neutral)),
+      data: filteredDates.map((date) => ratios[date].sentiment.neutral),
       borderColor: "rgb(234, 179, 8)",
       backgroundColor: "rgba(234, 179, 8, 0.1)",
       tension: 0.1,
@@ -1831,7 +2102,7 @@ function renderSentimentChart(reviews) {
     },
     {
       label: translate("Negative"),
-      data: sortedDates.map((date) => avg(dataByDate[date].negative)),
+      data: filteredDates.map((date) => ratios[date].sentiment.negative),
       borderColor: "rgb(239, 68, 68)",
       backgroundColor: "rgba(239, 68, 68, 0.1)",
       tension: 0.1,
@@ -1839,7 +2110,7 @@ function renderSentimentChart(reviews) {
     },
     {
       label: translate("Anger"),
-      data: sortedDates.map((date) => avg(dataByDate[date].anger)),
+      data: filteredDates.map((date) => ratios[date].emotions.anger),
       borderColor: "rgb(220, 38, 38)",
       backgroundColor: "rgba(220, 38, 38, 0.1)",
       tension: 0.1,
@@ -1847,7 +2118,7 @@ function renderSentimentChart(reviews) {
     },
     {
       label: translate("Anticipation"),
-      data: sortedDates.map((date) => avg(dataByDate[date].anticipation)),
+      data: filteredDates.map((date) => ratios[date].emotions.anticipation),
       borderColor: "rgb(59, 130, 246)",
       backgroundColor: "rgba(59, 130, 246, 0.1)",
       tension: 0.1,
@@ -1855,7 +2126,7 @@ function renderSentimentChart(reviews) {
     },
     {
       label: translate("Disgust"),
-      data: sortedDates.map((date) => avg(dataByDate[date].disgust)),
+      data: filteredDates.map((date) => ratios[date].emotions.disgust),
       borderColor: "rgb(168, 85, 247)",
       backgroundColor: "rgba(168, 85, 247, 0.1)",
       tension: 0.1,
@@ -1863,7 +2134,7 @@ function renderSentimentChart(reviews) {
     },
     {
       label: translate("Fear"),
-      data: sortedDates.map((date) => avg(dataByDate[date].fear)),
+      data: filteredDates.map((date) => ratios[date].emotions.fear),
       borderColor: "rgb(107, 114, 128)",
       backgroundColor: "rgba(107, 114, 128, 0.1)",
       tension: 0.1,
@@ -1871,7 +2142,7 @@ function renderSentimentChart(reviews) {
     },
     {
       label: translate("Joy"),
-      data: sortedDates.map((date) => avg(dataByDate[date].joy)),
+      data: filteredDates.map((date) => ratios[date].emotions.joy),
       borderColor: "rgb(34, 197, 94)",
       backgroundColor: "rgba(34, 197, 94, 0.1)",
       tension: 0.1,
@@ -1879,7 +2150,7 @@ function renderSentimentChart(reviews) {
     },
     {
       label: translate("Sadness"),
-      data: sortedDates.map((date) => avg(dataByDate[date].sadness)),
+      data: filteredDates.map((date) => ratios[date].emotions.sadness),
       borderColor: "rgb(99, 102, 241)",
       backgroundColor: "rgba(99, 102, 241, 0.1)",
       tension: 0.1,
@@ -1887,7 +2158,7 @@ function renderSentimentChart(reviews) {
     },
     {
       label: translate("Surprise"),
-      data: sortedDates.map((date) => avg(dataByDate[date].surprise)),
+      data: filteredDates.map((date) => ratios[date].emotions.surprise),
       borderColor: "rgb(245, 158, 11)",
       backgroundColor: "rgba(245, 158, 11, 0.1)",
       tension: 0.1,
@@ -1895,7 +2166,7 @@ function renderSentimentChart(reviews) {
     },
     {
       label: translate("Trust"),
-      data: sortedDates.map((date) => avg(dataByDate[date].trust)),
+      data: filteredDates.map((date) => ratios[date].emotions.trust),
       borderColor: "rgb(16, 185, 129)",
       backgroundColor: "rgba(16, 185, 129, 0.1)",
       tension: 0.1,
@@ -1906,7 +2177,7 @@ function renderSentimentChart(reviews) {
   commentsChart = new Chart(canvas, {
     type: "line",
     data: {
-      labels: sortedDates,
+      labels: filteredDates,
       datasets: datasets,
     },
     options: {

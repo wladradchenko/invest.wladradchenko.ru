@@ -247,6 +247,9 @@ class TextAnalyser:
         # Emotion analysis
         emotion = self.emotion_analyzer.analyze(analys)
         if positive == negative or neutral > 0.5:
+            emotion["negative"] = negative
+            emotion["positive"] = positive
+            emotion["neutral"] = neutral
             return emotion
         if negative > 0.5 or negative > positive:
             emotion["negative"] = negative
