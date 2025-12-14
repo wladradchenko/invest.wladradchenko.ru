@@ -98,7 +98,8 @@ class Database:
                 CREATE TABLE IF NOT EXISTS reviews (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     secid TEXT NOT NULL,
-                    review_text TEXT NOT NULL,
+                    review_text_ru TEXT NOT NULL,
+                    review_text_en TEXT NOT NULL,
                     review_img TEXT,
                     review_date DATE NOT NULL,
                     review_hash TEXT,
@@ -294,8 +295,9 @@ class Database:
         async with aiosqlite.connect(self.db_path) as db:
             for review in reviews:
                 try:
-                    review_text = review.get('text', '').strip()
-                    if not review_text:
+                    review_text_ru = review.get('text', '').strip()
+                    review_text_en = review.get('text_en', '').strip()
+                    if not review_text_ru:
                         continue
 
                     review_img = review.get('img', '').strip() if review.get('img') else ''
@@ -308,15 +310,16 @@ class Database:
                         review_date_str = datetime.now().date().isoformat()
                     
                     # Create hash for uniqueness check
-                    review_hash = hashlib.md5(f"{secid}:{review_text}:{review_date_str}".encode('utf-8')).hexdigest()
+                    review_hash = hashlib.md5(f"{secid}:{review_text_ru}:{review_date_str}".encode('utf-8')).hexdigest()
 
                     await db.execute("""
                         INSERT OR IGNORE INTO reviews 
-                        (secid, review_text, review_img, review_date, review_hash, positive, neutral, negative, anger, anticipation, disgust, fear, joy, sadness, surprise, trust, source, last_parsed_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                        (secid, review_text_ru, review_text_en, review_img, review_date, review_hash, positive, neutral, negative, anger, anticipation, disgust, fear, joy, sadness, surprise, trust, source, last_parsed_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                     """, (
                         secid,
-                        review_text,
+                        review_text_ru,
+                        review_text_en,
                         review_img,
                         review_date_str,
                         review_hash,

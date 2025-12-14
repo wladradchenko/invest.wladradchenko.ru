@@ -36,6 +36,13 @@
   * ADX (Средний индекс направленного движения)
   * Общая оценка и рекомендации
 
+* **Нейронные сети для анализа настроения рынка по ценной бумаге**
+  * LLM модель для анализа текста, картинки, видео и фильтрации комментариев
+  * Анализатор настроений из текста
+  * Анализатор эмоций из текста
+  * Парсинг комментариев за 7 дней по ценной бумаге
+  * Рассчет индикаторов настроения
+
 * **Нейронные сети для прогнозирования цен**
 
   * LSTM модели для анализа временных рядов
@@ -130,6 +137,7 @@ python app.py
 * `database.py` — управление SQLite базой данных
 * `moex_api.py` — клиент MOEX API
 * `ml_models.py` — модели машинного обучения (LSTM)
+* `text_models.py` — модели для анализа текста (LLM)
 * `indicators.py` — расчёт технических индикаторов
 * `static/` — статические файлы (HTML, CSS, JS)
 
@@ -137,9 +145,19 @@ python app.py
 
 * `GET /` — главная страница
 * `GET /api/security/{secid}` — данные по акции
+* `GET /api/security/{secid}/dividends` — данные о дивидендах
+* `GET /api/security/{secid}/coupons` — данные о купонах
+* `GET /api/security/{secid}/yields` — данные о доходности
+* `GET /api/security/{secid}/specification` — данные спецификации
+* `GET /api/security/{secid}/history/sessions` — данные о сессиях для хранения в кэше
+* `GET /api/security/{secid}/reviews/meta` — данные о последнем обновлении обзора
+* `GET /api/security/{secid}/reviews/progress` — ход сбора и обработки обзоров
+* `GET /api/security/{secid}/reviews/start` — начало сбора и обработки обзоров
 * `GET /api/search?q={query}` — поиск акций
+* `GET /api/news` — список новостей
 * `GET /api/indexes` — список индексов
-* `GET /api/index/{indexid}/securities` — акции в индексе
+* `GET /api/index/{indexid}/securities` — акции, входящие в индекс
+* `GET /api/portfolio/calculate` — рассчитать портфель с новыми ценными бумагами
 
 ## Примеры индексов
 
@@ -177,13 +195,13 @@ python app.py
 <!-- VIDEO -->
 ## Скриншоты
 
-| Скриншот 1 | Скриншот 2 | Скриншот 3 |
+| Начальная | Индексы | Ценные бумаги |
 |--------------|--------------|--------------|
 | [![1](screens/1.png)](screens/1.png) | [![2](screens/2.png)](screens/2.png) | [![3](screens/3.png)](screens/3.png) |
 
-| Скриншот 4 | Скриншот 5 |
-|--------------|--------------|
-| [![4](screens/4.png)](screens/4.png) | [![5](screens/5.png)](screens/5.png) |
+| Технические индикаторы и прогнозируемая цена | Анализ настроения | Результаты портфеля |
+|--------------|--------------|--------------|
+| [![4](screens/4.png)](screens/4.png) | [![5](screens/6.png)](screens/6.png) | [![6](screens/5.png)](screens/5.png) |
 
 <!-- CONTACT -->
 

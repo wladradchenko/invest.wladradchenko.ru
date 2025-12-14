@@ -36,6 +36,13 @@ A modern web application for analyzing Moscow Exchange (MOEX) stocks using neura
   * ADX (Average Directional Index)
   * Summary (General recommendation)
 
+* **Neural networks for analyzing market sentiment for securities**
+  * LLM model for analyzing text, images, videos, and filtering comments
+  * Text-based sentiment analyzer
+  * Text-based emotion analyzer
+  * Parsing comments for a 7-day period for a security
+  * Calculating sentiment indicators
+
 * **Neural Networks for Price Forecasting**
 
   * LSTM models for time series analysis
@@ -131,6 +138,7 @@ The project consists of the following modules:
 * `database.py` — SQLite database management
 * `moex_api.py` — MOEX API client
 * `ml_models.py` — machine learning models (LSTM)
+* `text_models.py` — text analysis models (LLM)
 * `indicators.py` — technical indicator calculations
 * `static/` — static files (HTML, CSS, JS)
 
@@ -138,9 +146,19 @@ The project consists of the following modules:
 
 * `GET /` — main page
 * `GET /api/security/{secid}` — stock data
+* `GET /api/security/{secid}/dividends` — dividends data
+* `GET /api/security/{secid}/coupons` — coupons data
+* `GET /api/security/{secid}/yields` — yields data
+* `GET /api/security/{secid}/specification` — specification data
+* `GET /api/security/{secid}/history/sessions` — sessions data to keep cache
+* `GET /api/security/{secid}/reviews/meta` — last review update data
+* `GET /api/security/{secid}/reviews/progress` — progress of collection and processing reviews
+* `GET /api/security/{secid}/reviews/start` — start collection and processing reviews
 * `GET /api/search?q={query}` — search for stocks
+* `GET /api/news` — list of news
 * `GET /api/indexes` — list of indexes
 * `GET /api/index/{indexid}/securities` — stocks in an index
+* `GET /api/portfolio/calculate` — calculate portfolio with new securities
 
 ## Example Indexes
 
@@ -178,13 +196,13 @@ The project is open for improvements and suggestions.
 <!-- Screens -->
 ## Screenshots
 
-| Screenshot 1 | Screenshot 2 | Screenshot 3 |
+| Head | Index Selection | Securities |
 |--------------|--------------|--------------|
 | [![1](screens/1.png)](screens/1.png) | [![2](screens/2.png)](screens/2.png) | [![3](screens/3.png)](screens/3.png) |
 
-| Screenshot 4 | Screenshot 5 |
-|--------------|--------------|
-| [![4](screens/4.png)](screens/4.png) | [![5](screens/5.png)](screens/5.png) |
+| Technical Indicators and Prediction Price | Overall Sentiment | Portfolio Result |
+|--------------|--------------|--------------|
+| [![4](screens/4.png)](screens/4.png) | [![5](screens/6.png)](screens/6.png) | [![6](screens/5.png)](screens/5.png) |
 
 <!-- CONTACT -->
 ## Contact

@@ -1,6 +1,7 @@
 """
 Main Application - MOEX Investment Analyzer
 """
+import re
 import aiohttp
 from aiohttp import web
 import gettext
@@ -282,7 +283,14 @@ class InvestmentAnalyzer:
                         continue
 
                     # Translate text (async, but fast)
-                    translated_text = await self.text_predictor.translator.translate(review_text, src_lang='Russian', trg_lang='English')
+                    total = len(review_text.replace(" ", ""))
+                    ratio = len(re.findall(r'[А-Яа-яЁё]', review_text)) / total if total else 0
+                    if ratio > 0.1:
+                        translated_text = await self.text_predictor.translator.translate(review_text, src_lang='Russian', trg_lang='English')
+                    else:
+                        translated_text = review_text
+                        review_text = await self.text_predictor.translator.translate(review_text, src_lang='English', trg_lang='Russian')
+
 
                     # Run neural networks in thread pool to avoid blocking event loop
                     # This allows progress updates to be visible
@@ -293,7 +301,7 @@ class InvestmentAnalyzer:
                         review.get("img")
                     )
                     if analysis is not None:
-                        analysis_reviews.append({**review, **analysis})
+                        analysis_reviews.append({**review, **analysis, 'text_en': translated_text})
 
                     # Update progress after each analysis
                     self.parsing_progress[secid_upper]['current'] = i + 1
@@ -352,8 +360,17 @@ class InvestmentAnalyzer:
             # Convert to format with all sentiment data
             result = []
             for review in db_reviews:
+                img_path = review.get('review_img', '')
+                img_path = img_path.replace('\\', '/')
+                if '/media' in img_path:
+                    img_path = img_path[img_path.index('/media'):]
+                else:
+                    img_path = ''
+
                 result.append({
-                    'text': review.get('review_text', ''),
+                    'text': review.get('review_text_ru', ''),
+                    'text_en': review.get('review_text_en', ''),
+                    'img': img_path,
                     'date': review.get('review_date', ''),
                     'positive': review.get('positive', 0),
                     'neutral': review.get('neutral', 0),
@@ -711,31 +728,24 @@ def create_app() -> web.Application:
     app.router.add_get('/', index_handler)
     app.router.add_get('/lang/{lang}', set_lang)
     app.router.add_get('/api/indexes', api_indexes_handler)
-    app.router.add_get(
-        '/api/index/{indexid}/securities', api_index_securities_handler)
+    app.router.add_get('/api/index/{indexid}/securities', api_index_securities_handler)
     app.router.add_get('/api/security/{secid}', api_security_handler)
-    app.router.add_get(
-        '/api/security/{secid}/dividends', api_dividends_handler)
+    app.router.add_get('/api/security/{secid}/dividends', api_dividends_handler)
     app.router.add_get('/api/security/{secid}/coupons', api_coupons_handler)
     app.router.add_get('/api/security/{secid}/yields', api_yields_handler)
-    app.router.add_get(
-        '/api/security/{secid}/specification', api_specification_handler)
-    app.router.add_get(
-        '/api/security/{secid}/history/sessions', api_history_sessions_handler)
+    app.router.add_get('/api/security/{secid}/specification', api_specification_handler)
+    app.router.add_get('/api/security/{secid}/history/sessions', api_history_sessions_handler)
     app.router.add_get('/api/security/{secid}/reviews', api_reviews_handler)
-    app.router.add_get(
-        '/api/security/{secid}/reviews/meta', api_should_parse_reviews_handler)
-    app.router.add_get(
-        '/api/security/{secid}/reviews/progress', api_reviews_progress_handler)
-    app.router.add_post(
-        '/api/security/{secid}/reviews/start', api_reviews_start_parsing_handler)
+    app.router.add_get('/api/security/{secid}/reviews/meta', api_should_parse_reviews_handler)
+    app.router.add_get('/api/security/{secid}/reviews/progress', api_reviews_progress_handler)
+    app.router.add_post('/api/security/{secid}/reviews/start', api_reviews_start_parsing_handler)
     app.router.add_get('/api/news', api_news_handler)
     app.router.add_get('/api/search', search_securities_handler)
-    app.router.add_post('/api/portfolio/calculate',
-                        api_portfolio_calculate_handler)
+    app.router.add_post('/api/portfolio/calculate',api_portfolio_calculate_handler)
 
     # Static files
     app.router.add_static('/static/', path='static/', name='static')
+    app.router.add_static('/media/', path='media/', name='media')
 
     # Startup and cleanup
     async def on_startup(app):
