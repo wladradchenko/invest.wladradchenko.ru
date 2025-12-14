@@ -36,7 +36,7 @@ A modern web application for analyzing Moscow Exchange (MOEX) stocks using neura
   * ADX (Average Directional Index)
   * Summary (General recommendation)
  
-* **Neural networks for analyzing market sentiment for securities** (branch [llm](https://github.com/wladradchenko/invest.wladradchenko.ru/tree/llm))
+* **Neural networks for analyzing market sentiment for securities** (branch [LLM](https://github.com/wladradchenko/invest.wladradchenko.ru/tree/llm))
   * LLM model (2 GB VRAM or 12 GB versions) for analyzing text, images, videos, and filtering comments
   * Text-based sentiment analyzer
   * Text-based emotion analyzer
