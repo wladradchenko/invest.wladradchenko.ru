@@ -70,6 +70,7 @@ A modern web application for analyzing Moscow Exchange (MOEX) stocks using neura
 
 ## Installation
 
+0. Make sure you have CUDA 11.x or 12.x installed.
 1. Ensure Python 3.9+ is installed.
 2. Create a virtual environment (if not already created):
 
@@ -89,7 +90,7 @@ pip install -r requirements.txt
 **Note**: TA-Lib may require system libraries:
 
 * Ubuntu/Debian: `sudo apt-get install ta-lib`
-* macOS: `brew install ta-lib`
+* macOS: `brew install ta-lib` (Not supported LLM version)
 * Windows: download the library from [official site](https://ta-lib.org/install/)
 
 The application will still work with simplified indicators if TA-Lib is unavailable.
