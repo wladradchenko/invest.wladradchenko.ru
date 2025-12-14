@@ -366,11 +366,28 @@
                             </div>
                         </div>
                         <!-- Chart container -->
-                        <div id="modalCommentsChartContainer" class="mb-4 hidden" style="height: 400px;">
+                        <div id="modalCommentsChartContainer" class="mb-10 hidden hidden-on-touchscreen" style="height: 400px;">
                             <canvas id="modalCommentsChart"></canvas>
                         </div>
                         <!-- Content (hidden initially, shown after data loaded) -->
-                        <div class="grid grid-cols-2 md:grid-cols-4 gap-3" id="modalCommentsContent"></div>
+                        <div class="flex flex-col gap-2 hidden" id="modalCommentsContainer">
+                            <div class="flex md:flex-row flex-col gap-2 mx-6">
+                                <span onclick="filterSentimentBySide(this, 'start')" class="text-xs relative items-center gap-1 flex flex-row"><span style="border-color: #FFC107; background: #2a2316;" class="border w-4 h-4 flex rounded-full"></span>
+                                    {{ _('Base sentiment')}}
+                                </span>
+                                <span onclick="filterSentimentBySide(this, 'end')" class="text-xs relative items-center gap-1 flex flex-row"><span style="border-color: #576fed; background: #1b1f31;" class="border w-4 h-4 flex rounded-full"></span>
+                                    {{ _('Current sentiment')}}
+                                </span>
+                                <span onclick="filterSentimentByDirection(this, 'up')" class="text-xs relative items-center gap-1 flex flex-row"><span style="border-color: #4CAF50; background: #0e3723;" class="border w-4 h-4 flex rounded-full"></span>
+                                    {{ _('Upward trend')}}
+                                </span>
+                                <span onclick="filterSentimentByDirection(this, 'down')" class="text-xs relative items-center gap-1 flex flex-row"><span style="border-color: #F44336; background: #2e1818;" class="border w-4 h-4 flex rounded-full"></span>
+                                    {{ _('Downward trend')}}
+                                </span>
+                            </div>
+                            <div class="grid grid-cols-2 md:grid-cols-5 gap-1" id="modalCommentsRates"></div>
+                            <div id="modalCommentsContent" class="flex flex-col gap-2"></div>
+                        </div>
                     </div>
           
                     <!-- Dividends / Coupons / Yields -->
@@ -386,6 +403,17 @@
                   </div>
                 </div>
               </div>
+            </div>
+        </template>
+
+        <template id="sentiment-score-template">
+            <div class="flex flex-col gap-1 col-span-1 p-4 text-center">
+                <span class="text-xs" data-key="start-name"></span>
+                <div class="flex flex-col gap-0 rounded-md overflow-hidden">
+                    <span class="text-2xl font-bold p-1 border border-4" data-key="start-score" style="border-top-left-radius: .5rem;border-top-right-radius: .5rem; border-bottom-width: 0px;"></span>
+                    <span class="text-2xl font-bold p-1 border border-4" data-key="end-score" style="border-bottom-left-radius: .5rem;border-bottom-right-radius: .5rem; border-top-width: 0px;"></span>
+                </div>
+                <span class="text-xs" data-key="end-name"></span>
             </div>
         </template>
 
