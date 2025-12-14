@@ -185,12 +185,12 @@ The project is open for improvements and suggestions.
 <!-- Screens -->
 ## Screenshots
 
-| Screenshot 1 | Screenshot 2 | Screenshot 3 |
+| Head | Index Selection | Securities |
 |--------------|--------------|--------------|
 | [![1](screens/1.png)](screens/1.png) | [![2](screens/2.png)](screens/2.png) | [![3](screens/3.png)](screens/3.png) |
 
-| Screenshot 4 | Screenshot 5 |
-|--------------|--------------|
+| Technical Indicators and Prediction Price | Portfolio Result |
+|--------------|--------------|--------------|
 | [![4](screens/4.png)](screens/4.png) | [![5](screens/5.png)](screens/5.png) |
 
 <!-- CONTACT -->
