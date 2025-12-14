@@ -35,6 +35,13 @@ A modern web application for analyzing Moscow Exchange (MOEX) stocks using neura
   * EMA (Exponential Moving Average)
   * ADX (Average Directional Index)
   * Summary (General recommendation)
+ 
+* **Neural networks for analyzing market sentiment for securities** (branch [llm](https://github.com/wladradchenko/invest.wladradchenko.ru/tree/llm))
+  * LLM model (2 GB VRAM or 12 GB versions) for analyzing text, images, videos, and filtering comments
+  * Text-based sentiment analyzer
+  * Text-based emotion analyzer
+  * Parsing comments for a 7-day period for a security
+  * Calculating sentiment indicators
 
 * **Neural Networks for Price Forecasting**
 
@@ -63,6 +70,7 @@ A modern web application for analyzing Moscow Exchange (MOEX) stocks using neura
 
 ## Installation
 
+0. Make sure you have CUDA 11.x or 12.x installed.
 1. Ensure Python 3.9+ is installed.
 2. Create a virtual environment (if not already created):
 
