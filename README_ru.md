@@ -189,7 +189,7 @@ python app.py
 | [![1](screens/1.png)](screens/1.png) | [![2](screens/2.png)](screens/2.png) | [![3](screens/3.png)](screens/3.png) |
 
 | Технические индикаторы и прогнозируемая цена | Результаты портфеля |
-|--------------|--------------|--------------|
+|--------------|--------------|
 | [![4](screens/4.png)](screens/4.png) | [![5](screens/5.png)](screens/5.png) |
 
 <!-- CONTACT -->
