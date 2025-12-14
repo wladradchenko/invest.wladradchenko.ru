@@ -70,7 +70,6 @@ A modern web application for analyzing Moscow Exchange (MOEX) stocks using neura
 
 ## Installation
 
-0. Make sure you have CUDA 11.x or 12.x installed.
 1. Ensure Python 3.9+ is installed.
 2. Create a virtual environment (if not already created):
 
