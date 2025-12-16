@@ -117,6 +117,17 @@ const TRANSLATIONS = {
   "No reviews found matching filters":
     "Нет комментариев, соответствующих фильтрам",
   "Loading more comments...": "Загрузка комментариев...",
+  "Background analysis in progress": "Выполняется фоновый анализ отзывов",
+  "Background analysis": "Фоновый анализ",
+  "Here you can see all running and queued analysis tasks for your session.":
+    "Здесь отображаются все выполняющиеся и ожидающие задачи анализа для вашей сессии.",
+  "No active tasks": "Нет активных задач",
+  Queued: "В очереди",
+  Running: "Выполняется",
+  Completed: "Завершена",
+  Cancelled: "Отменена",
+  "Error status": "Ошибка",
+  Cancel: "Отменить",
   pcs: "шт",
   Until: "До",
   "RSI (Relative Strength Index)": "RSI (Индекс относительной силы)", // RSI
@@ -1607,6 +1618,10 @@ let activeFilters = {
 };
 const COMMENTS_PER_PAGE = 20; // Load 20 comments at a time
 
+// Global jobs polling
+let jobsPollInterval = null;
+let jobsModalInterval = null;
+
 async function loadModalComments(secid) {
   if (!secid) return;
 
@@ -1658,6 +1673,287 @@ async function loadModalComments(secid) {
     console.error("Error loading comments meta:", e);
     overlay.classList.add("hidden");
   }
+}
+
+// =========================
+// Global Jobs Bar & Modal
+// =========================
+
+async function fetchUserJobs() {
+  try {
+    const resp = await fetch(`${API_BASE}/api/reviews/jobs`);
+    if (!resp.ok) return [];
+    const data = await resp.json();
+    return data.jobs || [];
+  } catch (e) {
+    console.error("Error loading jobs:", e);
+    return [];
+  }
+}
+
+async function updateGlobalJobsBar() {
+  const bar = document.getElementById("globalJobsBar");
+  if (!bar) return;
+
+  const jobs = await fetchUserJobs();
+  const active = jobs.filter((j) =>
+    ["queued", "running"].includes(String(j.status || "").toLowerCase())
+  );
+
+  if (active.length === 0) {
+    bar.classList.add("hidden");
+    return;
+  }
+
+  const textEl = document.getElementById("globalJobsText");
+  if (textEl) {
+    const running = active.filter(
+      (j) => String(j.status || "").toLowerCase() === "running"
+    ).length;
+    const queued = active.length - running;
+    const parts = [];
+    if (running > 0) parts.push(`${running} ${translate("Running")}`);
+    if (queued > 0) parts.push(`${queued} ${translate("Queued")}`);
+    textEl.textContent = `${translate(
+      "Background analysis in progress"
+    )} (${parts.join(", ")})`;
+  }
+
+  bar.classList.remove("hidden");
+}
+
+function startJobsPolling() {
+  if (jobsPollInterval) return;
+  updateGlobalJobsBar();
+  jobsPollInterval = setInterval(updateGlobalJobsBar, 5000);
+}
+
+window.addEventListener("load", () => {
+  startJobsPolling();
+});
+
+window.openJobsModal = async function () {
+  const template = document.querySelector("#jobs-modal-template");
+  if (!template) return;
+
+  // Remove existing modal if any
+  const existing = document.querySelector(".jobs-modal-root");
+  if (existing) existing.remove();
+
+  // Clear any existing interval
+  if (jobsModalInterval) {
+    clearInterval(jobsModalInterval);
+    jobsModalInterval = null;
+  }
+
+  const clone = template.content.cloneNode(true);
+  const modalRoot = clone.querySelector("div");
+  modalRoot.classList.add("jobs-modal-root");
+
+  const closeButtons = modalRoot.querySelectorAll(".jobs-modal-close");
+  closeButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      // Stop polling when modal closes
+      if (jobsModalInterval) {
+        clearInterval(jobsModalInterval);
+        jobsModalInterval = null;
+      }
+      modalRoot.remove();
+    });
+  });
+
+  document.body.appendChild(modalRoot);
+  modalRoot.classList.remove("hidden");
+
+  // Initial render
+  await renderJobsModalContent();
+
+  // Start periodic updates
+  jobsModalInterval = setInterval(renderJobsModalContent, 2000);
+};
+
+async function renderJobsModalContent() {
+  const container = document.getElementById("jobsModalContent");
+  if (!container) return;
+
+  const jobs = await fetchUserJobs();
+
+  // Handle loading/empty states only on first render
+  const existingJobs = container.querySelectorAll("[data-job-id]");
+  if (existingJobs.length === 0) {
+    if (!jobs || jobs.length === 0) {
+      container.innerHTML =
+        '<p class="text-gray-400 text-xs py-4 text-center">' +
+        translate("No active tasks") +
+        "</p>";
+      return;
+    }
+    // Clear loading message if any
+    container.innerHTML = "";
+  } else if (!jobs || jobs.length === 0) {
+    // If we had jobs but now there are none, show empty message
+    container.innerHTML =
+      '<p class="text-gray-400 text-xs py-4 text-center">' +
+      translate("No active tasks") +
+      "</p>";
+    return;
+  }
+
+  const sortedJobs = jobs
+    .sort((a, b) => (a.created_at || "").localeCompare(b.created_at || ""))
+    .reverse();
+
+  // Track which job IDs we've seen
+  const seenJobIds = new Set();
+
+  sortedJobs.forEach((job) => {
+    seenJobIds.add(job.id);
+
+    const status = String(job.status || "").toLowerCase();
+    const progress = job.progress || {};
+    const total = progress.total || 0;
+    const current = progress.current || 0;
+    const percent = total > 0 ? Math.round((current / total) * 100) : 0;
+
+    const statusLabel =
+      status === "queued"
+        ? translate("Queued")
+        : status === "running"
+        ? translate("Running")
+        : status === "completed"
+        ? translate("Completed")
+        : status === "cancelled"
+        ? translate("Cancelled")
+        : translate("Error status");
+
+    const statusColor =
+      status === "queued"
+        ? "text-yellow-400"
+        : status === "running"
+        ? "text-emerald-400"
+        : status === "completed"
+        ? "text-blue-400"
+        : status === "cancelled"
+        ? "text-gray-400"
+        : "text-red-400";
+
+    const barColor =
+      status === "completed"
+        ? "bg-blue-500"
+        : status === "cancelled"
+        ? "bg-gray-500"
+        : status === "running"
+        ? "bg-emerald-500"
+        : "bg-yellow-500";
+
+    // Find existing element or create new one
+    let wrap = container.querySelector(`[data-job-id="${job.id}"]`);
+
+    if (!wrap) {
+      // Create new element only if it doesn't exist
+      wrap = document.createElement("div");
+      wrap.className =
+        "border border-white/10 rounded-xl p-3 flex flex-col gap-2 bg-[#050816]/80";
+      wrap.setAttribute("data-job-id", job.id);
+
+      wrap.innerHTML = `
+        <div class="flex justify-between items-center">
+          <div class="flex flex-col gap-1">
+            <div class="text-xs text-gray-300">
+              <span class="font-semibold job-secid"></span>
+            </div>
+            <div class="text-[10px] text-gray-500">
+              <span class="job-id"></span>
+            </div>
+          </div>
+          <div class="text-right">
+            <div class="job-status text-xs font-semibold"></div>
+            <div class="job-progress-text text-[10px] text-gray-500"></div>
+          </div>
+        </div>
+        <div class="mt-1">
+          <div class="w-full bg-gray-800 rounded-full h-2 overflow-hidden">
+            <div class="job-progress-bar h-2 rounded-full" style="width: 0%;"></div>
+          </div>
+        </div>
+        <div class="job-message text-[10px] text-red-400 mt-1 hidden"></div>
+        <div class="job-actions mt-2 flex justify-end"></div>
+      `;
+
+      container.appendChild(wrap);
+    }
+
+    // Update values without recreating DOM
+    const secidEl = wrap.querySelector(".job-secid");
+    if (secidEl) secidEl.textContent = job.secid || "?";
+
+    const idEl = wrap.querySelector(".job-id");
+    if (idEl) idEl.textContent = job.id || "";
+
+    const statusEl = wrap.querySelector(".job-status");
+    if (statusEl) {
+      statusEl.textContent = statusLabel;
+      // Update classes: remove old color, add new
+      statusEl.className = `job-status text-xs font-semibold ${statusColor}`;
+    }
+
+    const progressTextEl = wrap.querySelector(".job-progress-text");
+    if (progressTextEl) progressTextEl.textContent = `${current}/${total}`;
+
+    const progressBarEl = wrap.querySelector(".job-progress-bar");
+    if (progressBarEl) {
+      progressBarEl.style.width = `${percent}%`;
+      progressBarEl.className = `job-progress-bar h-2 rounded-full ${barColor}`;
+    }
+
+    const messageEl = wrap.querySelector(".job-message");
+    if (messageEl) {
+      if (job.message) {
+        messageEl.textContent = escapeHtml(job.message);
+        messageEl.classList.remove("hidden");
+      } else {
+        messageEl.classList.add("hidden");
+      }
+    }
+
+    // Handle cancel button
+    const actionsEl = wrap.querySelector(".job-actions");
+    if (actionsEl) {
+      if (["queued", "running"].includes(status)) {
+        // Check if button already exists
+        if (!actionsEl.querySelector("button")) {
+          const cancelBtn = document.createElement("button");
+          cancelBtn.className =
+            "text-[10px] px-3 py-1 rounded-full border border-red-500/50 text-red-400 hover:bg-red-500/10";
+          cancelBtn.textContent = translate("Cancel");
+          cancelBtn.onclick = async () => {
+            try {
+              await fetch(`${API_BASE}/api/reviews/jobs/${job.id}/cancel`, {
+                method: "POST",
+              });
+              await renderJobsModalContent();
+              await updateGlobalJobsBar();
+            } catch (e) {
+              console.error("Error cancelling job:", e);
+            }
+          };
+          actionsEl.appendChild(cancelBtn);
+        }
+      } else {
+        // Remove button if status changed
+        actionsEl.innerHTML = "";
+      }
+    }
+  });
+
+  // Remove jobs that no longer exist
+  const allJobElements = container.querySelectorAll("[data-job-id]");
+  allJobElements.forEach((el) => {
+    const jobId = el.getAttribute("data-job-id");
+    if (!seenJobIds.has(jobId)) {
+      el.remove();
+    }
+  });
 }
 
 async function startParsing(secid) {
@@ -1762,15 +2058,20 @@ async function loadAndDisplayReviews(secid) {
     const reviews = await resp.json();
 
     if (!reviews || reviews.length === 0) {
-      document.querySelector("#modalCommentsContent").innerHTML = '<p class="text-gray-400">' + translate("No reviews found") + "</p>";
+      document.querySelector("#modalCommentsContent").innerHTML =
+        '<p class="text-gray-400">' + translate("No reviews found") + "</p>";
       return;
     }
 
     // Hide overlay
-    document.querySelector("#modalCommentsLoadingOverlay").classList.add("hidden");
+    document
+      .querySelector("#modalCommentsLoadingOverlay")
+      .classList.add("hidden");
 
     // Show chart
-    const chartContainer = document.querySelector("#modalCommentsChartContainer");
+    const chartContainer = document.querySelector(
+      "#modalCommentsChartContainer"
+    );
     chartContainer.classList.remove("hidden");
 
     // Render chart
@@ -1786,7 +2087,9 @@ function filterSentimentBySide(btn, side) {
   // Filter rates
   const ratesContent = document.querySelector("#modalCommentsRates");
   if (ratesContent) {
-    const rateItems = ratesContent.querySelectorAll("[data-side='" + side + "']");
+    const rateItems = ratesContent.querySelectorAll(
+      "[data-side='" + side + "']"
+    );
     rateItems.forEach((item) => {
       if (btn.classList.contains("line-through")) {
         item.classList.remove("opacity-20");
@@ -1816,7 +2119,9 @@ function filterSentimentByDirection(btn, direction) {
   // Filter rates
   const ratesContent = document.querySelector("#modalCommentsRates");
   if (ratesContent) {
-    const rateItems = ratesContent.querySelectorAll("[data-direction='" + direction + "']");
+    const rateItems = ratesContent.querySelectorAll(
+      "[data-direction='" + direction + "']"
+    );
     rateItems.forEach((item) => {
       if (btn.classList.contains("line-through")) {
         item.classList.remove("opacity-20");
@@ -2350,9 +2655,13 @@ function renderSentimentChart(reviews) {
   displayedCommentsCount = 0;
 
   // Reset filter buttons
-  document.querySelectorAll('[onclick*="filterSentimentBySide"], [onclick*="filterSentimentByDirection"]').forEach((btn) => {
-    btn.classList.remove("line-through");
-  });
+  document
+    .querySelectorAll(
+      '[onclick*="filterSentimentBySide"], [onclick*="filterSentimentByDirection"]'
+    )
+    .forEach((btn) => {
+      btn.classList.remove("line-through");
+    });
 
   // Render comments with lazy loading
   renderFilteredComments();
@@ -2380,7 +2689,7 @@ function renderFilteredComments() {
 
   // Filter comments based on active filters
   let filteredComments = allCommentsData.filter((comment) => {
-    const clean = str => String(str).trim().toLowerCase();
+    const clean = (str) => String(str).trim().toLowerCase();
     if (activeFilters.direction.has(clean(comment._direction))) return false;
     if (activeFilters.side.has(clean(comment._side))) return false;
 
@@ -2388,7 +2697,10 @@ function renderFilteredComments() {
   });
 
   if (filteredComments.length === 0) {
-    commentsContainer.innerHTML = '<p class="text-gray-400 text-sm text-center py-4">' + translate("No reviews found matching filters") + "</p>";
+    commentsContainer.innerHTML =
+      '<p class="text-gray-400 text-sm text-center py-4">' +
+      translate("No reviews found matching filters") +
+      "</p>";
     return;
   }
 
@@ -2416,7 +2728,10 @@ function loadMoreComments(filteredComments, container) {
   if (batch.length === 0) return;
 
   batch.forEach((review) => {
-    const reviewText = lang === "ru" ? review.text || review.review_text || "" : review.text_en || review.review_text_en || "";
+    const reviewText =
+      lang === "ru"
+        ? review.text || review.review_text || ""
+        : review.text_en || review.review_text_en || "";
     const reviewDate = review.date || review.review_date || "";
     const reviewImg = review.img || review.review_img || "";
     const dateOnly = reviewDate ? reviewDate.split(" ")[0] : "";
@@ -2424,7 +2739,8 @@ function loadMoreComments(filteredComments, container) {
     if (!reviewText || reviewText.trim().length === 0) return;
 
     const commentDiv = document.createElement("div");
-    commentDiv.className = "bg-gray-800/50 border border-gray-700/50 rounded-lg p-3 text-sm";
+    commentDiv.className =
+      "bg-gray-800/50 border border-gray-700/50 rounded-lg p-3 text-sm";
 
     // Set data attributes
     commentDiv.setAttribute("data-side", review._side);
@@ -2432,7 +2748,12 @@ function loadMoreComments(filteredComments, container) {
 
     // Get sentiment info
     const sentiment = review._sentiment;
-    const sentimentColor = sentiment.type === "positive" ? "text-green-400" : sentiment.type === "negative" ? "text-red-400" : "text-yellow-400";
+    const sentimentColor =
+      sentiment.type === "positive"
+        ? "text-green-400"
+        : sentiment.type === "negative"
+        ? "text-red-400"
+        : "text-yellow-400";
 
     // Create comment HTML
     commentDiv.innerHTML = `
@@ -2448,8 +2769,14 @@ function loadMoreComments(filteredComments, container) {
           }
         </span>
       </div>
-      <p class="text-gray-300 text-xs leading-relaxed break-words">${escapeHtml(reviewText)}</p>
-      ${reviewImg ? `<img src="${reviewImg}" alt="Review image" class="w-full h-auto rounded-lg mt-2">` : ""}
+      <p class="text-gray-300 text-xs leading-relaxed break-words">${escapeHtml(
+        reviewText
+      )}</p>
+      ${
+        reviewImg
+          ? `<img src="${reviewImg}" alt="Review image" class="w-full h-auto rounded-lg mt-2">`
+          : ""
+      }
     `;
 
     container.appendChild(commentDiv);
@@ -2465,7 +2792,10 @@ function loadMoreComments(filteredComments, container) {
 
     const loader = document.createElement("div");
     loader.className = "comments-loader text-center py-4";
-    loader.innerHTML = '<p class="text-gray-400 text-xs">' + translate("Loading more comments...") + "</p>";
+    loader.innerHTML =
+      '<p class="text-gray-400 text-xs">' +
+      translate("Loading more comments...") +
+      "</p>";
     container.appendChild(loader);
 
     // Setup Intersection Observer for lazy loading
@@ -2493,7 +2823,9 @@ function loadMoreComments(filteredComments, container) {
     // Show total count
     const infoDiv = document.createElement("div");
     infoDiv.className = "text-gray-400 text-xs mt-2 text-center";
-    infoDiv.textContent = `${translate("Showing")} ${filteredComments.length} ${translate("comments")}`;
+    infoDiv.textContent = `${translate("Showing")} ${
+      filteredComments.length
+    } ${translate("comments")}`;
     container.appendChild(infoDiv);
   }
 }

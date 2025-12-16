@@ -522,6 +522,37 @@
                 <!-- Загрузка данных... -->
             </div>
         </div>
+
+        <!-- Global Jobs Progress Bar -->
+        <div id="globalJobsBar" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 hidden">
+            <div class="bg-[#14151a]/95 border border-white/10 rounded-full px-4 py-2 flex items-center gap-3 shadow-xl cursor-pointer"
+                 onclick="openJobsModal()">
+                <div class="w-3 h-3 rounded-full bg-emerald-400 animate-pulse"></div>
+                <div class="text-xs md:text-sm text-gray-200">
+                    <span id="globalJobsText">{{ _('Background analysis in progress')}}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Jobs Modal -->
+        <template id="jobs-modal-template">
+            <div style="backdrop-filter: blur(5px);background: rgba(0, 0, 0, 0.8);background: #000000a6 !important;" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm">
+              <div class="relative w-full max-w-2xl mx-4 backdrop-blur-xl border border-white border-opacity-10 rounded-2xl shadow-2xl overflow-hidden bg-[#050816]/95">
+                <button class="jobs-modal-close absolute top-4 right-4 z-10 w-10 h-10 flex items-center justify-center text-white hover:text-[#83599a] transition-colors">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+                <div class="p-6 md:p-8 max-h-[70vh] overflow-y-auto">
+                    <h3 class="text-white text-xl font-bold mb-2">{{ _('Background analysis')}}</h3>
+                    <p class="text-gray-400 text-xs mb-4">{{ _('Here you can see all running and queued analysis tasks for your session.')}}</p>
+
+                    <div id="jobsModalContent" class="space-y-3 text-xs md:text-sm text-gray-200">
+                        <!-- Filled by JS -->
+                    </div>
+                </div>
+              </div>
+            </div>
+        </template>
+
     </main>
 
     <footer class="text-center text-base text-gray-400 py-4"> &copy; 2023 - <span id="currentYear"></span> {% if lang == 'ru' %}{% else %} {{ _('by')}} {% endif %}
