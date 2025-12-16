@@ -14,6 +14,8 @@ import json
 import aiohttp_jinja2
 import jinja2
 import torch
+import uuid
+import re
 from tqdm import tqdm
 
 from database import Database
@@ -55,14 +57,30 @@ class InvestmentAnalyzer:
         self.indicator_analyzer = IndicatorAnalyzer()
         self.cache = CacheManager()
         self.reviews_parser = ReviewsParser()
-        # Track parsing progress: {secid: {'total': int, 'current': int, 'status': str, 'error': str}}
-        self.parsing_progress = {}
+        # Track parsing progress: {secid: {'total': int, 'current': int, 'status': str, 'error': str, 'job_id': str}}
+        self.parsing_progress: Dict[str, Dict] = {}
+        # In-memory job store: {job_id: {...}}
+        self.jobs: Dict[str, Dict] = {}
+        # Async queue for jobs
+        self.job_queue: asyncio.Queue = asyncio.Queue()
+        # Background workers for jobs
+        self.job_workers: List[asyncio.Task] = []
+        # Limits
+        self.MAX_GLOBAL_JOBS = 3          # max running jobs in total
+        # max parallel jobs per user (others are queued)
+        self.MAX_USER_PARALLEL = 1
 
     async def init(self):
         """Initialize application"""
         await self.db.init_db()
         self.cache.clear_expired()  # Clean old cache on startup
         logger.info("Application initialized")
+
+        # Start job workers if not started yet
+        if not self.job_workers:
+            for i in range(self.MAX_GLOBAL_JOBS):
+                worker = asyncio.create_task(self._job_worker(i))
+                self.job_workers.append(worker)
 
     async def cleanup(self):
         """Cleanup resources"""
@@ -214,30 +232,91 @@ class InvestmentAnalyzer:
             logger.error(f"Error getting reviews for {secid}: {e}")
             return True
 
-    async def start_parsing_reviews(self, secid: str):
-        """Start parsing reviews in background. Returns immediately."""
+    async def start_parsing_reviews(self, secid: str, user_id: str, priority: str = "interactive") -> Dict:
+        """
+        Enqueue parsing job for a security. Returns job descriptor.
+        Does NOT start parsing immediately; workers pull from the queue.
+        """
         secid_upper = secid.upper()
 
-        # Check if already parsing
-        if secid_upper in self.parsing_progress:
-            status = self.parsing_progress[secid_upper].get('status', '')
-            if status in ['parsing', 'analyzing']:
-                return  # Already parsing
+        # If there is already a running or queued job for this secid+user, reuse it
+        for job in self.jobs.values():
+            if job.get("secid") == secid_upper and job.get("user_id") == user_id and job.get("status") in {"queued", "running"}:
+                return job
 
-        # Initialize progress
+        job_id = str(uuid.uuid4())
+        job = {
+            "id": job_id,
+            "secid": secid_upper,
+            "user_id": user_id,
+            "status": "queued",
+            "progress": {"total": 0, "current": 0},
+            "priority": priority,
+            "cancel_requested": False,
+            "created_at": datetime.utcnow().isoformat(),
+            "message": "",
+        }
+        self.jobs[job_id] = job
+
+        # Initialize parsing progress per security for legacy progress endpoint
         self.parsing_progress[secid_upper] = {
-            'total': 0,
-            'current': 0,
-            'status': 'starting',
-            'error': None
+            "total": 0,
+            "current": 0,
+            "status": "queued",
+            "error": None,
+            "job_id": job_id,
         }
 
-        # Start parsing in background
-        asyncio.create_task(self._parse_reviews_background(secid_upper))
+        await self.job_queue.put(job_id)
+        logger.info(f"Enqueued job {job_id} for {secid_upper} by {user_id}")
+        return job
 
-    async def _parse_reviews_background(self, secid: str):
-        """Background task for parsing reviews"""
-        secid_upper = secid.upper()
+    async def _job_worker(self, worker_id: int):
+        """Background worker that pulls jobs from queue respecting per-user limits."""
+        logger.info(f"Job worker {worker_id} started")
+        while True:
+            job_id = await self.job_queue.get()
+            job = self.jobs.get(job_id)
+            if not job:
+                self.job_queue.task_done()
+                continue
+
+            # Skip cancelled or completed jobs
+            if job.get("status") in {"cancelled", "completed", "error"}:
+                self.job_queue.task_done()
+                continue
+
+            user_id = job.get("user_id")
+
+            # Enforce per-user parallel limit:
+            running_for_user = [
+                j for j in self.jobs.values()
+                if j.get("user_id") == user_id and j.get("status") == "running"
+            ]
+            if len(running_for_user) >= self.MAX_USER_PARALLEL:
+                # Put back and try later
+                await self.job_queue.put(job_id)
+                self.job_queue.task_done()
+                await asyncio.sleep(0.5)
+                continue
+
+            job["status"] = "running"
+            try:
+                await self._run_job(job)
+                if not job.get("cancel_requested") and job.get("status") not in {"error", "cancelled"}:
+                    job["status"] = "completed"
+            except Exception as e:
+                job["status"] = "error"
+                job["message"] = str(e)
+                logger.error(f"Job {job_id} failed: {e}")
+            finally:
+                self.job_queue.task_done()
+
+    async def _run_job(self, job: Dict):
+        """Actual parsing logic for a single job."""
+        secid_upper = job.get("secid")
+        job_id = job.get("id")
+
         try:
             # Check if we need to parse
             last_parsed, should_parse = await self.db.should_parse_reviews(secid_upper)
@@ -247,13 +326,15 @@ class InvestmentAnalyzer:
                     'total': 0,
                     'current': 0,
                     'status': 'completed',
-                    'error': None
+                    'error': None,
+                    'job_id': job_id,
                 }
+                job["status"] = "completed"
                 return
 
             # Update status
             self.parsing_progress[secid_upper]['status'] = 'parsing'
-            logger.info(f"Parsing reviews for {secid_upper}")
+            logger.info(f"[Job {job_id}] Parsing reviews for {secid_upper}")
 
             # Parse reviews from all sources
             reviews = await self.reviews_parser.parse_reviews(secid_upper, last_parsed)
@@ -263,34 +344,55 @@ class InvestmentAnalyzer:
                     'total': 0,
                     'current': 0,
                     'status': 'completed',
-                    'error': None
+                    'error': None,
+                    'job_id': job_id,
                 }
                 await self.db.update_date_reviews(secid_upper)
+                job["status"] = "completed"
                 return
 
             # Update progress for analysis
-            self.parsing_progress[secid_upper]['total'] = len(reviews)
+            total_reviews = len(reviews)
+            self.parsing_progress[secid_upper]['total'] = total_reviews
             self.parsing_progress[secid_upper]['current'] = 0
             self.parsing_progress[secid_upper]['status'] = 'analyzing'
+            self.parsing_progress[secid_upper]['job_id'] = job_id
+            job["progress"]["total"] = total_reviews
+            job["progress"]["current"] = 0
 
             analysis_reviews = []
             loop = asyncio.get_event_loop()
 
             for i, review in enumerate(reviews):
+                # Check cancellation
+                if job.get("cancel_requested"):
+                    logger.info(
+                        f"[Job {job_id}] Cancel requested, stopping analysis loop")
+                    job["status"] = "cancelled"
+                    self.parsing_progress[secid_upper]['status'] = 'cancelled'
+                    break
+
                 try:
                     review_text = review.get("text", "")
                     if not review_text:
                         continue
 
-                    # Translate text (async, but fast)
-                    total = len(review_text.replace(" ", ""))
-                    ratio = len(re.findall(r'[А-Яа-яЁё]', review_text)) / total if total else 0
-                    if ratio > 0.1:
-                        translated_text = await self.text_predictor.translator.translate(review_text, src_lang='Russian', trg_lang='English')
+                    # Detect language and translate accordingly
+                    total_chars = len(review_text.replace(" ", ""))
+                    ratio_ru = len(re.findall(
+                        r'[А-Яа-яЁё]', review_text)) / total_chars if total_chars else 0
+                    if ratio_ru > 0.1:
+                        # Mostly Russian -> translate to English
+                        translated_text = await self.text_predictor.translator.translate(
+                            review_text, src_lang='Russian', trg_lang='English'
+                        )
+                        review_text_ru = review_text
                     else:
+                        # Mostly English or other -> keep as English, translate to Russian for display
                         translated_text = review_text
-                        review_text = await self.text_predictor.translator.translate(review_text, src_lang='English', trg_lang='Russian')
-
+                        review_text_ru = await self.text_predictor.translator.translate(
+                            review_text, src_lang='English', trg_lang='Russian'
+                        )
 
                     # Run neural networks in thread pool to avoid blocking event loop
                     # This allows progress updates to be visible
@@ -301,41 +403,59 @@ class InvestmentAnalyzer:
                         review.get("img")
                     )
                     if analysis is not None:
-                        analysis_reviews.append({**review, **analysis, 'text_en': translated_text})
+                        analysis_reviews.append({
+                            **review,
+                            **analysis,
+                            'text_en': translated_text,
+                            'text_ru': review_text_ru,
+                        })
 
                     # Update progress after each analysis
-                    self.parsing_progress[secid_upper]['current'] = i + 1
+                    current_index = i + 1
+                    self.parsing_progress[secid_upper]['current'] = current_index
+                    job["progress"]["current"] = current_index
                     # Give event loop a chance to process other tasks (like progress requests)
                     await asyncio.sleep(0.01)
                 except Exception as e:
-                    logger.error(f"Error analyzing review {i}: {e}")
+                    logger.error(
+                        f"[Job {job_id}] Error analyzing review {i}: {e}")
                     # Still update progress even on error
-                    self.parsing_progress[secid_upper]['current'] = i + 1
+                    current_index = i + 1
+                    self.parsing_progress[secid_upper]['current'] = current_index
+                    job["progress"]["current"] = current_index
                     await asyncio.sleep(0.01)
                     continue
             else:
+                # Executed if loop wasn't broken (no cancellation)
                 if torch.cuda.is_available():  # Clear CUDA cache
                     torch.cuda.empty_cache()
 
             # Save to database
-            if analysis_reviews:
+            if analysis_reviews and not job.get("cancel_requested"):
                 await self.db.insert_reviews(secid_upper, analysis_reviews)
-                logger.info(f"Saved {len(analysis_reviews)} analyzed reviews for {secid_upper}")
-            elif reviews:
+                logger.info(
+                    f"[Job {job_id}] Saved {len(analysis_reviews)} analyzed reviews for {secid_upper}")
+            elif reviews and not job.get("cancel_requested"):
                 await self.db.update_date_reviews(secid_upper)
-                logger.info(f"No analyzed reviews, but updated date for {secid_upper}")
+                logger.info(
+                    f"[Job {job_id}] No analyzed reviews, but updated date for {secid_upper}")
 
-            # Mark as completed
-            self.parsing_progress[secid_upper]['status'] = 'completed'
+            # Mark as completed if not cancelled
+            if not job.get("cancel_requested"):
+                self.parsing_progress[secid_upper]['status'] = 'completed'
 
         except Exception as e:
-            logger.error(f"Error parsing reviews for {secid_upper}: {e}")
+            logger.error(
+                f"[Job {job_id}] Error parsing reviews for {secid_upper}: {e}")
             self.parsing_progress[secid_upper] = {
                 'total': 0,
                 'current': 0,
                 'status': 'error',
-                'error': str(e)
+                'error': str(e),
+                'job_id': job_id,
             }
+            job["status"] = "error"
+            job["message"] = str(e)
 
     def get_parsing_progress(self, secid: str) -> Dict:
         """Get parsing progress for a security"""
@@ -348,6 +468,36 @@ class InvestmentAnalyzer:
                 'error': None
             }
         return self.parsing_progress[secid_upper].copy()
+
+    def cancel_job(self, job_id: str, user_id: str | None = None) -> bool:
+        """Request cancellation of a job."""
+        job = self.jobs.get(job_id)
+        if not job:
+            return False
+        if user_id and job.get("user_id") != user_id:
+            # Do not allow cancelling other user's jobs
+            return False
+        job["cancel_requested"] = True
+        # If still queued, mark as cancelled immediately
+        if job.get("status") == "queued":
+            job["status"] = "cancelled"
+        return True
+
+    def get_user_jobs(self, user_id: str) -> List[Dict]:
+        """Return all jobs for a given user."""
+        return [
+            {
+                "id": j.get("id"),
+                "secid": j.get("secid"),
+                "status": j.get("status"),
+                "progress": j.get("progress"),
+                "priority": j.get("priority"),
+                "created_at": j.get("created_at"),
+                "message": j.get("message"),
+            }
+            for j in self.jobs.values()
+            if j.get("user_id") == user_id
+        ]
 
     async def get_reviews(self, secid: str) -> List[Dict]:
         """Get reviews for a security from database only (no parsing)"""
@@ -712,10 +862,48 @@ async def api_reviews_start_parsing_handler(request: web.Request) -> web.Respons
         return web.json_response({'error': 'secid required'}, status=400)
 
     try:
-        await analyzer.start_parsing_reviews(secid)
-        return web.json_response({'status': 'started'}, status=200)
+        # Use client IP as simple user identifier (since there's no auth)
+        user_id = request.remote or "anonymous"
+        job = await analyzer.start_parsing_reviews(secid, user_id=user_id, priority="interactive")
+        return web.json_response(
+            {
+                'status': job.get("status", "queued"),
+                'job_id': job.get("id"),
+                'secid': job.get("secid"),
+                'progress': job.get("progress", {}),
+            },
+            status=200
+        )
     except Exception as e:
         logger.error(f"Error starting parsing: {e}")
+        return web.json_response({'error': str(e)}, status=500)
+
+
+async def api_reviews_jobs_handler(request: web.Request) -> web.Response:
+    """API endpoint to list jobs for current user"""
+    try:
+        user_id = request.remote or "anonymous"
+        jobs = analyzer.get_user_jobs(user_id)
+        return web.json_response({'jobs': jobs}, status=200)
+    except Exception as e:
+        logger.error(f"Error getting jobs: {e}")
+        return web.json_response({'error': str(e)}, status=500)
+
+
+async def api_reviews_cancel_job_handler(request: web.Request) -> web.Response:
+    """API endpoint to cancel a job"""
+    job_id = request.match_info.get('job_id', '')
+    if not job_id:
+        return web.json_response({'error': 'job_id required'}, status=400)
+
+    try:
+        user_id = request.remote or "anonymous"
+        ok = analyzer.cancel_job(job_id, user_id=user_id)
+        if not ok:
+            return web.json_response({'error': 'job not found or not owned by user'}, status=404)
+        return web.json_response({'status': 'cancel_requested'}, status=200)
+    except Exception as e:
+        logger.error(f"Error cancelling job: {e}")
         return web.json_response({'error': str(e)}, status=500)
 
 
@@ -728,20 +916,31 @@ def create_app() -> web.Application:
     app.router.add_get('/', index_handler)
     app.router.add_get('/lang/{lang}', set_lang)
     app.router.add_get('/api/indexes', api_indexes_handler)
-    app.router.add_get('/api/index/{indexid}/securities', api_index_securities_handler)
+    app.router.add_get(
+        '/api/index/{indexid}/securities', api_index_securities_handler)
     app.router.add_get('/api/security/{secid}', api_security_handler)
-    app.router.add_get('/api/security/{secid}/dividends', api_dividends_handler)
+    app.router.add_get(
+        '/api/security/{secid}/dividends', api_dividends_handler)
     app.router.add_get('/api/security/{secid}/coupons', api_coupons_handler)
     app.router.add_get('/api/security/{secid}/yields', api_yields_handler)
-    app.router.add_get('/api/security/{secid}/specification', api_specification_handler)
-    app.router.add_get('/api/security/{secid}/history/sessions', api_history_sessions_handler)
+    app.router.add_get(
+        '/api/security/{secid}/specification', api_specification_handler)
+    app.router.add_get(
+        '/api/security/{secid}/history/sessions', api_history_sessions_handler)
     app.router.add_get('/api/security/{secid}/reviews', api_reviews_handler)
-    app.router.add_get('/api/security/{secid}/reviews/meta', api_should_parse_reviews_handler)
-    app.router.add_get('/api/security/{secid}/reviews/progress', api_reviews_progress_handler)
-    app.router.add_post('/api/security/{secid}/reviews/start', api_reviews_start_parsing_handler)
+    app.router.add_get(
+        '/api/security/{secid}/reviews/meta', api_should_parse_reviews_handler)
+    app.router.add_get(
+        '/api/security/{secid}/reviews/progress', api_reviews_progress_handler)
+    app.router.add_post(
+        '/api/security/{secid}/reviews/start', api_reviews_start_parsing_handler)
+    app.router.add_get('/api/reviews/jobs', api_reviews_jobs_handler)
+    app.router.add_post(
+        '/api/reviews/jobs/{job_id}/cancel', api_reviews_cancel_job_handler)
     app.router.add_get('/api/news', api_news_handler)
     app.router.add_get('/api/search', search_securities_handler)
-    app.router.add_post('/api/portfolio/calculate',api_portfolio_calculate_handler)
+    app.router.add_post('/api/portfolio/calculate',
+                        api_portfolio_calculate_handler)
 
     # Static files
     app.router.add_static('/static/', path='static/', name='static')
