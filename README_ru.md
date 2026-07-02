@@ -114,7 +114,7 @@ pip install -r requirements.txt
 ## Запуск приложения
 
 ```bash
-python app.py
+honcho start
 ```
 
 Приложение будет доступно по адресу: [http://localhost:8080](http://localhost:8080)

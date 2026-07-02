@@ -114,7 +114,7 @@ The application will still work with simplified indicators if TA-Lib is unavaila
 ## Running the Application
 
 ```
-python app.py
+honcho start
 ```
 
 The application will be available at: [http://localhost:8080](http://localhost:8080)
