@@ -372,7 +372,7 @@
                         <!-- Content (hidden initially, shown after data loaded) -->
                         <div class="flex flex-col gap-2 hidden" id="modalCommentsContainer">
                             <div class="flex md:flex-row flex-col gap-2 mx-6">
-                                <span onclick="filterSentimentBySide(this, 'start')" class="text-xs relative items-center gap-1 flex flex-row"><span style="border-color: #FFC107; background: #2a2316;" class="border w-4 h-4 flex rounded-full"></span>
+                                <span onclick="filterSentimentBySide(this, 'start')" class="text-xs relative items-center gap-1 flex flex-row"><span style="border-color: white; background: #ffffff2d;" class="border w-4 h-4 flex rounded-full"></span>
                                     {{ _('Base sentiment')}}
                                 </span>
                                 <span onclick="filterSentimentBySide(this, 'end')" class="text-xs relative items-center gap-1 flex flex-row"><span style="border-color: #576fed; background: #1b1f31;" class="border w-4 h-4 flex rounded-full"></span>
@@ -381,12 +381,15 @@
                                 <span onclick="filterSentimentByDirection(this, 'up')" class="text-xs relative items-center gap-1 flex flex-row"><span style="border-color: #4CAF50; background: #0e3723;" class="border w-4 h-4 flex rounded-full"></span>
                                     {{ _('Upward trend')}}
                                 </span>
+                                <span onclick="filterSentimentByDirection(this, 'neutral')" class="text-xs relative items-center gap-1 flex flex-row"><span style="border-color: #FFC107; background: #2a2316;" class="border w-4 h-4 flex rounded-full"></span>
+                                    {{ _('Flat trend')}}
+                                </span>
                                 <span onclick="filterSentimentByDirection(this, 'down')" class="text-xs relative items-center gap-1 flex flex-row"><span style="border-color: #F44336; background: #2e1818;" class="border w-4 h-4 flex rounded-full"></span>
                                     {{ _('Downward trend')}}
                                 </span>
                             </div>
                             <div class="grid grid-cols-2 md:grid-cols-5 gap-1" id="modalCommentsRates"></div>
-                            <div id="modalCommentsContent" class="flex flex-col gap-2"></div>
+                            <div id="modalCommentsContent" class="flex flex-col gap-2 max-h-[500px] overflow-y-auto"></div>
                         </div>
                     </div>
           

@@ -1,6 +1,13 @@
 // Main Application JavaScript - Portfolio Calculator
 
 const API_BASE = "";
+
+// Utility function to escape HTML
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
 let currentIndexId = "";
 let currentIndexName = "";
 let excludedCount = 0;
@@ -104,6 +111,12 @@ const TRANSLATIONS = {
   Sadness: "Печаль",
   Surprise: "Удивление",
   Trust: "Доверие",
+  Showing: "Показано",
+  of: "из",
+  comments: "комментариев",
+  "No reviews found matching filters":
+    "Нет комментариев, соответствующих фильтрам",
+  "Loading more comments...": "Загрузка комментариев...",
   pcs: "шт",
   Until: "До",
   "RSI (Relative Strength Index)": "RSI (Индекс относительной силы)", // RSI
@@ -1584,6 +1597,16 @@ let activeParsingSecid = null;
 let progressInterval = null;
 let commentsChart = null;
 
+// Global variables for comments filtering and lazy loading
+let allCommentsData = []; // All reviews data
+let displayedCommentsCount = 0; // How many comments are currently displayed
+let commentsObserver = null; // Intersection Observer for lazy loading
+let activeFilters = {
+  side: new Set(), // Active side filters (start, end, middle)
+  direction: new Set(), // Active direction filters (up, down, neutral)
+};
+const COMMENTS_PER_PAGE = 20; // Load 20 comments at a time
+
 async function loadModalComments(secid) {
   if (!secid) return;
 
@@ -1592,7 +1615,9 @@ async function loadModalComments(secid) {
 
   modalComments.classList.remove("hidden");
   const overlay = modalComments.querySelector("#modalCommentsLoadingOverlay");
-  const chartContainer = modalComments.querySelector("#modalCommentsChartContainer");
+  const chartContainer = modalComments.querySelector(
+    "#modalCommentsChartContainer"
+  );
   const content = modalComments.querySelector("#modalCommentsContent");
 
   // Reset state
@@ -1619,7 +1644,9 @@ async function loadModalComments(secid) {
       if (activeParsingSecid === secid) {
         // Already parsing, show progress
         startBtn.classList.add("hidden");
-        overlay.querySelector("#modalCommentsProgress").classList.remove("hidden");
+        overlay
+          .querySelector("#modalCommentsProgress")
+          .classList.remove("hidden");
         startProgressTracking(secid);
       } else {
         // Show start button
@@ -1679,12 +1706,16 @@ function startProgressTracking(secid) {
 
 async function updateProgress(secid) {
   try {
-    const resp = await fetch(`${API_BASE}/api/security/${secid}/reviews/progress`);
+    const resp = await fetch(
+      `${API_BASE}/api/security/${secid}/reviews/progress`
+    );
     const progress = await resp.json();
 
     const progressBar = document.querySelector("#modalCommentsProgressBar");
     const progressText = document.querySelector("#modalCommentsProgressText");
-    const progressStatus = document.querySelector("#modalCommentsProgressStatus");
+    const progressStatus = document.querySelector(
+      "#modalCommentsProgressStatus"
+    );
 
     if (progress.status === "completed") {
       // Parsing completed
@@ -1703,7 +1734,8 @@ async function updateProgress(secid) {
         progressInterval = null;
       }
       activeParsingSecid = null;
-      progressStatus.textContent = translate("Error") + ": " + (progress.error || "Unknown error");
+      progressStatus.textContent =
+        translate("Error") + ": " + (progress.error || "Unknown error");
     } else {
       // Update progress
       const total = progress.total || 1;
@@ -1714,7 +1746,9 @@ async function updateProgress(secid) {
       progressText.textContent = `${current} / ${total}`;
 
       const statusText =
-        progress.status === "parsing" ? translate("Parsing reviews...") : translate("Analyzing reviews...");
+        progress.status === "parsing"
+          ? translate("Parsing reviews...")
+          : translate("Analyzing reviews...");
       progressStatus.textContent = statusText;
     }
   } catch (e) {
@@ -1743,34 +1777,69 @@ async function loadAndDisplayReviews(secid) {
     renderSentimentChart(reviews);
   } catch (e) {
     console.error("Error loading reviews:", e);
-    document.querySelector("#modalCommentsContent").innerHTML = '<p class="text-red-400">' + translate("Error loading reviews") + "</p>";
+    document.querySelector("#modalCommentsContent").innerHTML =
+      '<p class="text-red-400">' + translate("Error loading reviews") + "</p>";
   }
 }
 
 function filterSentimentBySide(btn, side) {
-  const content = document.querySelector("#modalCommentsRates");
-  const items = content.querySelectorAll("[data-side='" + side + "']");
-  items.forEach((item) => {
-    if (btn.classList.contains("line-through")) {
-      item.classList.remove("opacity-20");
-    } else {
-      item.classList.add("opacity-20");
-    }
-  });
-  btn.classList.toggle("line-through");
+  // Filter rates
+  const ratesContent = document.querySelector("#modalCommentsRates");
+  if (ratesContent) {
+    const rateItems = ratesContent.querySelectorAll("[data-side='" + side + "']");
+    rateItems.forEach((item) => {
+      if (btn.classList.contains("line-through")) {
+        item.classList.remove("opacity-20");
+      } else {
+        item.classList.add("opacity-20");
+      }
+    });
+  }
+
+  // Toggle filter
+  if (btn.classList.contains("line-through")) {
+    activeFilters.side.delete(side);
+    btn.classList.remove("line-through");
+  } else {
+    activeFilters.side.add(side);
+    btn.classList.add("line-through");
+  }
+
+  // Re-render comments with filters
+  if (allCommentsData.length > 0) {
+    displayedCommentsCount = 0; // Reset displayed count
+    renderFilteredComments();
+  }
 }
 
 function filterSentimentByDirection(btn, direction) {
-  const content = document.querySelector("#modalCommentsRates");
-  const items = content.querySelectorAll("[data-direction='" + direction + "']");
-  items.forEach((item) => {
-    if (btn.classList.contains("line-through")) {
-      item.classList.remove("opacity-20");
-    } else {
-      item.classList.add("opacity-20");
-    }
-  });
-  btn.classList.toggle("line-through");
+  // Filter rates
+  const ratesContent = document.querySelector("#modalCommentsRates");
+  if (ratesContent) {
+    const rateItems = ratesContent.querySelectorAll("[data-direction='" + direction + "']");
+    rateItems.forEach((item) => {
+      if (btn.classList.contains("line-through")) {
+        item.classList.remove("opacity-20");
+      } else {
+        item.classList.add("opacity-20");
+      }
+    });
+  }
+
+  // Toggle filter
+  if (btn.classList.contains("line-through")) {
+    activeFilters.direction.delete(direction);
+    btn.classList.remove("line-through");
+  } else {
+    activeFilters.direction.add(direction);
+    btn.classList.add("line-through");
+  }
+
+  // Re-render comments with filters
+  if (allCommentsData.length > 0) {
+    displayedCommentsCount = 0; // Reset displayed count
+    renderFilteredComments();
+  }
 }
 
 function renderSentimentChart(reviews) {
@@ -1835,11 +1904,7 @@ function renderSentimentChart(reviews) {
   const sortedDates = Object.keys(dataByDate).sort();
 
   // Caclulate sentiment ratios for each day
-  const sentimentKeys = [
-    "positive",
-    "neutral",
-    "negative",
-  ];
+  const sentimentKeys = ["positive", "neutral", "negative"];
 
   const emotionKeys = [
     "anger",
@@ -1865,28 +1930,27 @@ function renderSentimentChart(reviews) {
     });
 
     if (total === 0) {
-      return Object.fromEntries(
-        keys.map((key) => [key, 0])
-      );
+      return Object.fromEntries(keys.map((key) => [key, 0]));
     }
 
     return Object.fromEntries(
-      keys.map((key) => [key, Math.round((sums[key] / total) * scale * 10) / 10])
+      keys.map((key) => [
+        key,
+        Math.round((sums[key] / total) * scale * 10) / 10,
+      ])
     );
   };
 
   const hasNonZeroSentiment = (dayData, keys) => {
-    return keys.some(
-      (key) => dayData[key]?.some((value) => value !== 0)
-    );
+    return keys.some((key) => dayData[key]?.some((value) => value !== 0));
   };
 
-  const startDate = sortedDates.find(
-    (date) => hasNonZeroSentiment(dataByDate[date], sentimentKeys)
+  const startDate = sortedDates.find((date) =>
+    hasNonZeroSentiment(dataByDate[date], sentimentKeys)
   );
 
-  const endDate = sortedDates.findLast(
-    (date) => hasNonZeroSentiment(dataByDate[date], sentimentKeys)
+  const endDate = sortedDates.findLast((date) =>
+    hasNonZeroSentiment(dataByDate[date], sentimentKeys)
   );
 
   // Calculate averages
@@ -1899,13 +1963,14 @@ function renderSentimentChart(reviews) {
       },
     ])
   );
-  const avg = (arr) => arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+  const avg = (arr) =>
+    arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
 
   const startTrendSentiment = ratios[startDate]?.sentiment || null;
   const startTrendEmotions = ratios[startDate]?.emotions || null;
   const endTrendSentiment = ratios[endDate]?.sentiment || null;
   const endTrendEmotions = ratios[endDate]?.emotions || null;
-  
+
   // Functiions for TrendEmotions
   const EMOTION_AXES = [
     { pos: "joy", neg: "sadness" },
@@ -1918,32 +1983,30 @@ function renderSentimentChart(reviews) {
     if (!emotions) {
       return { label: "Neutral", score: 0 };
     }
-  
+
     if (pos in emotions) {
       return {
         label: pos.charAt(0).toUpperCase() + pos.slice(1),
         score: emotions[pos],
       };
     }
-  
+
     if (neg in emotions) {
       return {
         label: neg.charAt(0).toUpperCase() + neg.slice(1),
         score: emotions[neg],
       };
     }
-  
+
     return { label: "Neutral", score: 0 };
   };
 
   const getSentimentLabelAndScore = (sentiment) => {
     if (!sentiment) {
       return { label: "Hold", score: 0 };
-    }
-    else if ("positive" in sentiment) {
+    } else if ("positive" in sentiment) {
       return { label: "Buy", score: sentiment.positive };
-    }
-    else if ("negative" in sentiment) {
+    } else if ("negative" in sentiment) {
       return { label: "Sell", score: sentiment.negative };
     }
     return {
@@ -1955,49 +2018,46 @@ function renderSentimentChart(reviews) {
   const getScoreStyles = (score, max = 10) => {
     const normalize = (value, max = 10) => Math.min(Math.abs(value) / max, 1);
     const strength = normalize(score, max); // 0..1
-  
+
     if (score > 0) {
       return {
         background: `rgba(34, 197, 94, ${0.1 + Math.min(strength * 0.2, 0.2)})`,
         border: `rgba(34, 197, 94, ${0.3 + Math.min(strength * 0.3, 0.3)})`,
       };
     }
-  
+
     if (score < 0) {
       return {
-        background: `rgba(239, 68, 68, ${0.1 + Math.min(strength * 0.24, 0.2)})`,
+        background: `rgba(239, 68, 68, ${
+          0.1 + Math.min(strength * 0.24, 0.2)
+        })`,
         border: `rgba(239, 68, 68, ${0.3 + Math.min(strength * 0.3, 0.3)})`,
       };
     }
-  
+
     return {
       background: "rgba(234, 179, 8, 0.15)",
       border: "rgba(234, 179, 8, 0.4)",
     };
   };
-  
-  
+
   const renderSide = (clone, side, { label, score }) => {
     const nameEl = clone.querySelector(`[data-key="${side}-name"]`);
     const scoreEl = clone.querySelector(`[data-key="${side}-score"]`);
     nameEl.setAttribute("data-side", side);
     scoreEl.setAttribute("data-side", side);
-  
+
     nameEl.textContent = translate(label);
     scoreEl.textContent = score;
-  
+
     const styles = getScoreStyles(score);
     scoreEl.style.backgroundColor = styles.background;
     scoreEl.style.borderColor = styles.border;
   };
 
-  const renderBipolarBlock = ({
-    getValue,
-    startData,
-    endData,
-  }) => {
+  const renderBipolarBlock = ({ getValue, startData, endData }) => {
     const clone = template.content.cloneNode(true);
-  
+
     const start = getValue(startData);
     const end = getValue(endData);
 
@@ -2016,25 +2076,23 @@ function renderSentimentChart(reviews) {
     rates.appendChild(clone);
   };
 
-
   const computeTrendEmotions = (emotions) => {
     if (!emotions) return null;
-  
+
     const appraisal = {};
-  
+
     EMOTION_AXES.forEach(({ pos, neg }) => {
       const diff = (emotions[pos] || 0) - (emotions[neg] || 0);
-  
+
       if (diff > 0) {
         appraisal[pos] = Math.round(diff * 10) / 10;
       } else if (diff < 0) {
-        appraisal[neg] =  Math.round(diff * 10) / 10;
+        appraisal[neg] = Math.round(diff * 10) / 10;
       }
       // diff === 0 → скрываем
     });
     return appraisal;
   };
-  
 
   // Functiions for TrendSentiment
   const computeTrendSentiment = (sentiment) => {
@@ -2057,14 +2115,13 @@ function renderSentimentChart(reviews) {
     }
   };
 
-
   // Apply to start and end
   const trendStartEmotions = computeTrendEmotions(startTrendEmotions);
   const trendEndEmotions = computeTrendEmotions(endTrendEmotions);
 
   const trendStartSentiment = computeTrendSentiment(startTrendSentiment);
   const trendEndSentiment = computeTrendSentiment(endTrendSentiment);
-  
+
   renderBipolarBlock({
     getValue: getSentimentLabelAndScore,
     startData: trendStartSentiment,
@@ -2224,6 +2281,221 @@ function renderSentimentChart(reviews) {
       },
     },
   });
+
+  // Helper function for sentiment calculation
+  function getReviewSentiment(review) {
+    const { positive = 0, neutral = 0, negative = 0 } = review;
+    if (neutral > positive && neutral > negative) {
+      return { type: "neutral", score: neutral };
+    }
+    const diff = positive - negative;
+    if (diff > 0) {
+      return { type: "positive", score: diff };
+    } else if (diff < 0) {
+      return { type: "negative", score: Math.abs(diff) };
+    }
+    return { type: "neutral", score: neutral };
+  }
+
+  // Store all data globally
+  allCommentsData = reviews.map((review, index) => {
+    // Pre-calculate side and direction for each review
+    const reviewDate = review.date ? review.date.split(" ")[0] : "";
+    let side = "middle";
+    if (startDate) {
+      const reviewDateObj = new Date(reviewDate);
+      const startDateObj = new Date(startDate);
+      const diffDays = Math.abs(
+        (reviewDateObj - startDateObj) / (1000 * 60 * 60 * 24)
+      );
+      if (diffDays <= 2) side = "start";
+    }
+    if (endDate && side === "middle") {
+      const reviewDateObj = new Date(reviewDate);
+      const endDateObj = new Date(endDate);
+      const diffDays = Math.abs(
+        (reviewDateObj - endDateObj) / (1000 * 60 * 60 * 24)
+      );
+      if (diffDays <= 2) side = "end";
+    }
+
+    // Calculate direction
+    let direction = "neutral";
+    const currentSentiment = getReviewSentiment(review);
+    if (currentSentiment.type === "positive") direction = "up";
+    else if (currentSentiment.type === "negative") direction = "down";
+
+    return {
+      ...review,
+      _side: side,
+      _direction: direction,
+      _sentiment: getReviewSentiment(review),
+    };
+  });
+
+  // Sort from oldest to newest
+  allCommentsData.sort((a, b) => {
+    const dateA = a.date
+      ? new Date(a.date.split(" ")[0] || a.date)
+      : new Date(0);
+    const dateB = b.date
+      ? new Date(b.date.split(" ")[0] || b.date)
+      : new Date(0);
+    return dateA - dateB;
+  });
+
+  // Reset filters and displayed count
+  activeFilters.side.clear();
+  activeFilters.direction.clear();
+  displayedCommentsCount = 0;
+
+  // Reset filter buttons
+  document.querySelectorAll('[onclick*="filterSentimentBySide"], [onclick*="filterSentimentByDirection"]').forEach((btn) => {
+    btn.classList.remove("line-through");
+  });
+
+  // Render comments with lazy loading
+  renderFilteredComments();
+
+  // Store dates globally
+  window.currentStartDate = startDate;
+  window.currentEndDate = endDate;
+}
+
+function renderFilteredComments() {
+  const commentsContainer = document.querySelector("#modalCommentsContent");
+  if (!commentsContainer) return;
+
+  // Show container if hidden
+  const container = document.querySelector("#modalCommentsContainer");
+  if (container) {
+    container.classList.remove("hidden");
+  }
+
+  // Disconnect previous observer
+  if (commentsObserver) {
+    commentsObserver.disconnect();
+    commentsObserver = null;
+  }
+
+  // Filter comments based on active filters
+  let filteredComments = allCommentsData.filter((comment) => {
+    const clean = str => String(str).trim().toLowerCase();
+    if (activeFilters.direction.has(clean(comment._direction))) return false;
+    if (activeFilters.side.has(clean(comment._side))) return false;
+
+    return true;
+  });
+
+  if (filteredComments.length === 0) {
+    commentsContainer.innerHTML = '<p class="text-gray-400 text-sm text-center py-4">' + translate("No reviews found matching filters") + "</p>";
+    return;
+  }
+
+  // Reverse sort
+  filteredComments.reverse();
+
+  // Clear container
+  commentsContainer.innerHTML = "";
+
+  // Reset displayed count
+  displayedCommentsCount = 0;
+
+  // Load initial batch
+  loadMoreComments(filteredComments, commentsContainer);
+}
+
+function loadMoreComments(filteredComments, container) {
+  const startIndex = displayedCommentsCount;
+  const endIndex = Math.min(
+    startIndex + COMMENTS_PER_PAGE,
+    filteredComments.length
+  );
+  const batch = filteredComments.slice(startIndex, endIndex);
+
+  if (batch.length === 0) return;
+
+  batch.forEach((review) => {
+    const reviewText = lang === "ru" ? review.text || review.review_text || "" : review.text_en || review.review_text_en || "";
+    const reviewDate = review.date || review.review_date || "";
+    const reviewImg = review.img || review.review_img || "";
+    const dateOnly = reviewDate ? reviewDate.split(" ")[0] : "";
+
+    if (!reviewText || reviewText.trim().length === 0) return;
+
+    const commentDiv = document.createElement("div");
+    commentDiv.className = "bg-gray-800/50 border border-gray-700/50 rounded-lg p-3 text-sm";
+
+    // Set data attributes
+    commentDiv.setAttribute("data-side", review._side);
+    commentDiv.setAttribute("data-direction", review._direction);
+
+    // Get sentiment info
+    const sentiment = review._sentiment;
+    const sentimentColor = sentiment.type === "positive" ? "text-green-400" : sentiment.type === "negative" ? "text-red-400" : "text-yellow-400";
+
+    // Create comment HTML
+    commentDiv.innerHTML = `
+      <div class="flex justify-between items-start mb-2">
+        <span class="text-gray-400 text-xs">${dateOnly || "N/A"}</span>
+        <span class="${sentimentColor} text-xs font-semibold">
+          ${
+            sentiment.type === "positive"
+              ? translate("Positive")
+              : sentiment.type === "negative"
+              ? translate("Negative")
+              : translate("Neutral")
+          }
+        </span>
+      </div>
+      <p class="text-gray-300 text-xs leading-relaxed break-words">${escapeHtml(reviewText)}</p>
+      ${reviewImg ? `<img src="${reviewImg}" alt="Review image" class="w-full h-auto rounded-lg mt-2">` : ""}
+    `;
+
+    container.appendChild(commentDiv);
+  });
+
+  displayedCommentsCount = endIndex;
+
+  // Add loading indicator if there are more comments
+  if (endIndex < filteredComments.length) {
+    // Remove existing loader if any
+    const existingLoader = container.querySelector(".comments-loader");
+    if (existingLoader) existingLoader.remove();
+
+    const loader = document.createElement("div");
+    loader.className = "comments-loader text-center py-4";
+    loader.innerHTML = '<p class="text-gray-400 text-xs">' + translate("Loading more comments...") + "</p>";
+    container.appendChild(loader);
+
+    // Setup Intersection Observer for lazy loading
+    if (!commentsObserver) {
+      commentsObserver = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              loadMoreComments(filteredComments, container);
+              // Remove loader after loading
+              if (entry.target) entry.target.remove();
+            }
+          });
+        },
+        { rootMargin: "100px" }
+      );
+    }
+
+    commentsObserver.observe(loader);
+  } else {
+    // All comments loaded
+    const existingLoader = container.querySelector(".comments-loader");
+    if (existingLoader) existingLoader.remove();
+
+    // Show total count
+    const infoDiv = document.createElement("div");
+    infoDiv.className = "text-gray-400 text-xs mt-2 text-center";
+    infoDiv.textContent = `${translate("Showing")} ${filteredComments.length} ${translate("comments")}`;
+    container.appendChild(infoDiv);
+  }
 }
 
 async function calculatePortfolio() {
