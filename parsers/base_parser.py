@@ -148,12 +148,29 @@ class BaseParser(ABC):
         self.logger.warning(f"Could not parse date: {date_str}, using current date")
         return datetime.now()
     
-    def is_this_week(self, date: datetime) -> bool:
-        """Check if date is within current week"""
-        today = datetime.now()
-        week_start = today - timedelta(days=today.weekday())
-        week_end = week_start + timedelta(days=6)
-        return week_start.date() <= date.date() <= week_end.date()
+    @staticmethod
+    def normalize_start_date(start_date):
+        """Normalize start_date (None | str | date | datetime) to a date or None.
+
+        The DB layer passes a datetime.date, tests/CLI may pass 'YYYY-MM-DD'.
+        """
+        if start_date is None:
+            return None
+        if isinstance(start_date, datetime):
+            return start_date.date()
+        if hasattr(start_date, 'isoformat') and not isinstance(start_date, str):
+            return start_date  # datetime.date
+        try:
+            return datetime.strptime(str(start_date)[:10], '%Y-%m-%d').date()
+        except ValueError:
+            return None
+
+    def in_parse_window(self, date: datetime, start_date=None) -> bool:
+        """Check if date falls into the window we are parsing:
+        after start_date if given, otherwise within the last DAYS days."""
+        if start_date is not None:
+            return date.date() > start_date
+        return date.date() >= (datetime.now() - timedelta(days=self.DAYS)).date()
     
     @abstractmethod
     async def parse_reviews(self, secid: str) -> List[Dict]:

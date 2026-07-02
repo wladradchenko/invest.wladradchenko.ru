@@ -1,30 +1,28 @@
 """
-Main Application - MOEX Investment Analyzer
+Main Application - MOEX Investment Analyzer (Quart web process)
+
+The web process is intentionally light: no heavy neural models are loaded
+here. Review parsing/analysis and the weekly advisor run in the celery
+worker (see tasks.py / advisor.py); job state is shared through redis.
 """
-import re
-import aiohttp
-from aiohttp import web
+import json
 import gettext
-import asyncio
-import numpy as np
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
-import json
-import aiohttp_jinja2
-import jinja2
-import torch
-import uuid
-import re
-from tqdm import tqdm
+from typing import Dict, List
 
-from database import Database
-from moex_api import MOEXClient
-from ml_models import MLPredictor
-from text_models import TextAnalyser
-from indicators import IndicatorAnalyzer
+import numpy as np
+import redis.asyncio as aioredis
+from quart import Quart, Response, jsonify, redirect, render_template, request, send_from_directory
+
 from cache import CacheManager
-from parsers import ReviewsParser
+from celery_app import app as celery
+from database import Database
+from indicators import IndicatorAnalyzer
+from jobstore import JobStore, new_job
+from ml_models import MLPredictor
+from moex_api import MOEXClient
+from settings import CONFIG, REDIS_URL
 
 """
 pybabel extract -F babel.cfg -o messages.pot .
@@ -32,7 +30,6 @@ pybabel init -i messages.pot -d translations -l ru
 pybabel update -i messages.pot -d translations -l ru
 pybabel compile -d translations
 """
-
 
 # Setup logging
 logging.basicConfig(
@@ -47,47 +44,21 @@ logger = logging.getLogger("app")
 
 
 class InvestmentAnalyzer:
-    """Main application class"""
+    """Data access + light analytics for the web process"""
 
     def __init__(self):
         self.db = Database()
-        print("Loading neural models before start")
-        self.text_predictor = TextAnalyser()
         self.ml_predictor = MLPredictor()
         self.indicator_analyzer = IndicatorAnalyzer()
         self.cache = CacheManager()
-        self.reviews_parser = ReviewsParser()
-        # Track parsing progress: {secid: {'total': int, 'current': int, 'status': str, 'error': str, 'job_id': str}}
-        self.parsing_progress: Dict[str, Dict] = {}
-        # In-memory job store: {job_id: {...}}
-        self.jobs: Dict[str, Dict] = {}
-        # Async queue for jobs
-        self.job_queue: asyncio.Queue = asyncio.Queue()
-        # Background workers for jobs
-        self.job_workers: List[asyncio.Task] = []
-        # Limits
-        self.MAX_GLOBAL_JOBS = 3          # max running jobs in total
-        # max parallel jobs per user (others are queued)
-        self.MAX_USER_PARALLEL = 1
 
     async def init(self):
-        """Initialize application"""
         await self.db.init_db()
-        self.cache.clear_expired()  # Clean old cache on startup
+        self.cache.clear_expired()
         logger.info("Application initialized")
 
-        # Start job workers if not started yet
-        if not self.job_workers:
-            for i in range(self.MAX_GLOBAL_JOBS):
-                worker = asyncio.create_task(self._job_worker(i))
-                self.job_workers.append(worker)
-
-    async def cleanup(self):
-        """Cleanup resources"""
-        logger.info("Application cleaned up")
-
     async def get_security_data(self, secid: str, days: int = 60) -> Dict:
-        """Get security data with indicators and predictions"""
+        """Get security data with indicators and forecast zone"""
         try:
             # Get candles from database or API
             candles = await self.db.get_candles(secid, days=days)
@@ -95,7 +66,6 @@ class InvestmentAnalyzer:
             if not candles or len(candles) < 20:
                 # Fetch from MOEX API
                 async with MOEXClient(cache_manager=self.cache) as client:
-                    # Get board and market for this security (check DB first, then API)
                     board_market = await client.get_security_board_market(secid, db=self.db)
                     if not board_market:
                         return {'error': 'Не удалось определить режим торговли для бумаги'}
@@ -104,13 +74,11 @@ class InvestmentAnalyzer:
                     market = board_market.get('market', 'shares')
                     engine = board_market.get('engine', 'stock')
 
-                    # Save to DB for future use
-                    await self.db.save_security_board_market(secid, board, market, engine)
-
                     new_candles = await client.get_candles(
                         secid,
                         board=board,
                         market=market,
+                        engine=engine,
                         days=days,
                         interval=24
                     )
@@ -125,7 +93,6 @@ class InvestmentAnalyzer:
             security = await self.db.get_security(secid)
             if not security:
                 async with MOEXClient(cache_manager=self.cache) as client:
-                    # Get board and market for this security (check DB first, then API)
                     board_market = await client.get_security_board_market(secid, db=self.db)
                     if board_market:
                         board = board_market.get('board', 'TQBR')
@@ -133,10 +100,7 @@ class InvestmentAnalyzer:
                         engine = board_market.get('engine', 'stock')
                         info = await client.get_security_info(secid, board=board, market=market)
                     else:
-                        # Fallback to default
-                        board = 'TQBR'
-                        market = 'shares'
-                        engine = 'stock'
+                        board, market, engine = 'TQBR', 'shares', 'stock'
                         info = await client.get_security_info(secid)
 
                     if info:
@@ -158,18 +122,19 @@ class InvestmentAnalyzer:
             # Calculate indicators
             indicators = self.indicator_analyzer.analyze_all(candles)
 
-            # ML predictions
-            predictions, confidence = self.ml_predictor.predict(
+            # Quantile price zone (Chronos-Bolt; SMA fallback)
+            forecast, confidence, model_type = self.ml_predictor.predict(
                 candles, days=7)
+            medians = forecast.get('median', [])
 
             # Save predictions
-            if predictions:
-                for i, pred_price in enumerate(predictions):
-                    pred_date = (datetime.now() +
-                                 timedelta(days=i+1)).date().isoformat()
-                    await self.db.save_prediction(
-                        secid, pred_date, pred_price, confidence, 'LSTM'
-                    )
+            for i, pred_price in enumerate(medians):
+                pred_date = (datetime.now() +
+                             timedelta(days=i+1)).date().isoformat()
+                await self.db.save_prediction(
+                    secid, pred_date, pred_price, confidence, model_type,
+                    low_price=forecast['low'][i], high_price=forecast['high'][i]
+                )
 
             return {
                 'security': security,
@@ -178,11 +143,14 @@ class InvestmentAnalyzer:
                 'predictions': [
                     {
                         'date': (datetime.now() + timedelta(days=i+1)).date().isoformat(),
-                        'price': round(price, 2)
+                        'price': round(price, 2),
+                        'low': round(forecast['low'][i], 2),
+                        'high': round(forecast['high'][i], 2)
                     }
-                    for i, price in enumerate(predictions)
+                    for i, price in enumerate(medians)
                 ],
-                'confidence': round(confidence, 2) if confidence else 0.0
+                'confidence': round(confidence, 2) if confidence else 0.0,
+                'model_type': model_type
             }
         except Exception as e:
             logger.error(f"Error getting security data: {e}")
@@ -204,7 +172,7 @@ class InvestmentAnalyzer:
                             dt = datetime.strptime(till_date, '%Y-%m-%d')
                             if dt.month == current_month and dt.year == current_year:
                                 filtered.append(idx)
-                        except:
+                        except Exception:
                             pass
                 return filtered[:50]  # Limit to 50
         except Exception as e:
@@ -215,299 +183,16 @@ class InvestmentAnalyzer:
         """Get securities in an index"""
         try:
             async with MOEXClient(cache_manager=self.cache) as client:
-                securities = await client.get_index_securities(indexid, limit=100)
-                return securities
+                return await client.get_index_securities(indexid, limit=100)
         except Exception as e:
             logger.error(f"Error getting index securities: {e}")
             return []
 
-    async def should_parse_reviews(self, secid: str):
-        try:
-            secid_upper = secid.upper()
-
-            # Check if we need to parse (not parsed today)
-            _, should_parse = await self.db.should_parse_reviews(secid_upper)
-            return should_parse
-        except Exception as e:
-            logger.error(f"Error getting reviews for {secid}: {e}")
-            return True
-
-    async def start_parsing_reviews(self, secid: str, user_id: str, priority: str = "interactive") -> Dict:
-        """
-        Enqueue parsing job for a security. Returns job descriptor.
-        Does NOT start parsing immediately; workers pull from the queue.
-        """
-        secid_upper = secid.upper()
-
-        # If there is already a running or queued job for this secid+user, reuse it
-        for job in self.jobs.values():
-            if job.get("secid") == secid_upper and job.get("user_id") == user_id and job.get("status") in {"queued", "running"}:
-                return job
-
-        job_id = str(uuid.uuid4())
-        job = {
-            "id": job_id,
-            "secid": secid_upper,
-            "user_id": user_id,
-            "status": "queued",
-            "progress": {"total": 0, "current": 0},
-            "priority": priority,
-            "cancel_requested": False,
-            "created_at": datetime.utcnow().isoformat(),
-            "message": "",
-        }
-        self.jobs[job_id] = job
-
-        # Initialize parsing progress per security for legacy progress endpoint
-        self.parsing_progress[secid_upper] = {
-            "total": 0,
-            "current": 0,
-            "status": "queued",
-            "error": None,
-            "job_id": job_id,
-        }
-
-        await self.job_queue.put(job_id)
-        logger.info(f"Enqueued job {job_id} for {secid_upper} by {user_id}")
-        return job
-
-    async def _job_worker(self, worker_id: int):
-        """Background worker that pulls jobs from queue respecting per-user limits."""
-        logger.info(f"Job worker {worker_id} started")
-        while True:
-            job_id = await self.job_queue.get()
-            job = self.jobs.get(job_id)
-            if not job:
-                self.job_queue.task_done()
-                continue
-
-            # Skip cancelled or completed jobs
-            if job.get("status") in {"cancelled", "completed", "error"}:
-                self.job_queue.task_done()
-                continue
-
-            user_id = job.get("user_id")
-
-            # Enforce per-user parallel limit:
-            running_for_user = [
-                j for j in self.jobs.values()
-                if j.get("user_id") == user_id and j.get("status") == "running"
-            ]
-            if len(running_for_user) >= self.MAX_USER_PARALLEL:
-                # Put back and try later
-                await self.job_queue.put(job_id)
-                self.job_queue.task_done()
-                await asyncio.sleep(0.5)
-                continue
-
-            job["status"] = "running"
-            try:
-                await self._run_job(job)
-                if not job.get("cancel_requested") and job.get("status") not in {"error", "cancelled"}:
-                    job["status"] = "completed"
-            except Exception as e:
-                job["status"] = "error"
-                job["message"] = str(e)
-                logger.error(f"Job {job_id} failed: {e}")
-            finally:
-                self.job_queue.task_done()
-
-    async def _run_job(self, job: Dict):
-        """Actual parsing logic for a single job."""
-        secid_upper = job.get("secid")
-        job_id = job.get("id")
-
-        try:
-            # Check if we need to parse
-            last_parsed, should_parse = await self.db.should_parse_reviews(secid_upper)
-
-            if not should_parse:
-                self.parsing_progress[secid_upper] = {
-                    'total': 0,
-                    'current': 0,
-                    'status': 'completed',
-                    'error': None,
-                    'job_id': job_id,
-                }
-                job["status"] = "completed"
-                return
-
-            # Update status
-            self.parsing_progress[secid_upper]['status'] = 'parsing'
-            logger.info(f"[Job {job_id}] Parsing reviews for {secid_upper}")
-
-            # Parse reviews from all sources
-            reviews = await self.reviews_parser.parse_reviews(secid_upper, last_parsed)
-
-            if not reviews:
-                self.parsing_progress[secid_upper] = {
-                    'total': 0,
-                    'current': 0,
-                    'status': 'completed',
-                    'error': None,
-                    'job_id': job_id,
-                }
-                await self.db.update_date_reviews(secid_upper)
-                job["status"] = "completed"
-                return
-
-            # Update progress for analysis
-            total_reviews = len(reviews)
-            self.parsing_progress[secid_upper]['total'] = total_reviews
-            self.parsing_progress[secid_upper]['current'] = 0
-            self.parsing_progress[secid_upper]['status'] = 'analyzing'
-            self.parsing_progress[secid_upper]['job_id'] = job_id
-            job["progress"]["total"] = total_reviews
-            job["progress"]["current"] = 0
-
-            analysis_reviews = []
-            loop = asyncio.get_event_loop()
-
-            for i, review in enumerate(reviews):
-                # Check cancellation
-                if job.get("cancel_requested"):
-                    logger.info(
-                        f"[Job {job_id}] Cancel requested, stopping analysis loop")
-                    job["status"] = "cancelled"
-                    self.parsing_progress[secid_upper]['status'] = 'cancelled'
-                    break
-
-                try:
-                    review_text = review.get("text", "")
-                    if not review_text:
-                        continue
-
-                    # Detect language and translate accordingly
-                    total_chars = len(review_text.replace(" ", ""))
-                    ratio_ru = len(re.findall(
-                        r'[А-Яа-яЁё]', review_text)) / total_chars if total_chars else 0
-                    if ratio_ru > 0.1:
-                        # Mostly Russian -> translate to English
-                        translated_text = await self.text_predictor.translator.translate(
-                            review_text, src_lang='Russian', trg_lang='English'
-                        )
-                        review_text_ru = review_text
-                    else:
-                        # Mostly English or other -> keep as English, translate to Russian for display
-                        translated_text = review_text
-                        review_text_ru = await self.text_predictor.translator.translate(
-                            review_text, src_lang='English', trg_lang='Russian'
-                        )
-
-                    # Run neural networks in thread pool to avoid blocking event loop
-                    # This allows progress updates to be visible
-                    analysis = await loop.run_in_executor(
-                        None,
-                        self.text_predictor._analyze_neural_networks_sync,
-                        translated_text,
-                        review.get("img")
-                    )
-                    if analysis is not None:
-                        analysis_reviews.append({
-                            **review,
-                            **analysis,
-                            'text_en': translated_text,
-                            'text_ru': review_text_ru,
-                        })
-
-                    # Update progress after each analysis
-                    current_index = i + 1
-                    self.parsing_progress[secid_upper]['current'] = current_index
-                    job["progress"]["current"] = current_index
-                    # Give event loop a chance to process other tasks (like progress requests)
-                    await asyncio.sleep(0.01)
-                except Exception as e:
-                    logger.error(
-                        f"[Job {job_id}] Error analyzing review {i}: {e}")
-                    # Still update progress even on error
-                    current_index = i + 1
-                    self.parsing_progress[secid_upper]['current'] = current_index
-                    job["progress"]["current"] = current_index
-                    await asyncio.sleep(0.01)
-                    continue
-            else:
-                # Executed if loop wasn't broken (no cancellation)
-                if torch.cuda.is_available():  # Clear CUDA cache
-                    torch.cuda.empty_cache()
-
-            # Save to database
-            if analysis_reviews and not job.get("cancel_requested"):
-                await self.db.insert_reviews(secid_upper, analysis_reviews)
-                logger.info(
-                    f"[Job {job_id}] Saved {len(analysis_reviews)} analyzed reviews for {secid_upper}")
-            elif reviews and not job.get("cancel_requested"):
-                await self.db.update_date_reviews(secid_upper)
-                logger.info(
-                    f"[Job {job_id}] No analyzed reviews, but updated date for {secid_upper}")
-
-            # Mark as completed if not cancelled
-            if not job.get("cancel_requested"):
-                self.parsing_progress[secid_upper]['status'] = 'completed'
-
-        except Exception as e:
-            logger.error(
-                f"[Job {job_id}] Error parsing reviews for {secid_upper}: {e}")
-            self.parsing_progress[secid_upper] = {
-                'total': 0,
-                'current': 0,
-                'status': 'error',
-                'error': str(e),
-                'job_id': job_id,
-            }
-            job["status"] = "error"
-            job["message"] = str(e)
-
-    def get_parsing_progress(self, secid: str) -> Dict:
-        """Get parsing progress for a security"""
-        secid_upper = secid.upper()
-        if secid_upper not in self.parsing_progress:
-            return {
-                'total': 0,
-                'current': 0,
-                'status': 'idle',
-                'error': None
-            }
-        return self.parsing_progress[secid_upper].copy()
-
-    def cancel_job(self, job_id: str, user_id: str | None = None) -> bool:
-        """Request cancellation of a job."""
-        job = self.jobs.get(job_id)
-        if not job:
-            return False
-        if user_id and job.get("user_id") != user_id:
-            # Do not allow cancelling other user's jobs
-            return False
-        job["cancel_requested"] = True
-        # If still queued, mark as cancelled immediately
-        if job.get("status") == "queued":
-            job["status"] = "cancelled"
-        return True
-
-    def get_user_jobs(self, user_id: str) -> List[Dict]:
-        """Return all jobs for a given user."""
-        return [
-            {
-                "id": j.get("id"),
-                "secid": j.get("secid"),
-                "status": j.get("status"),
-                "progress": j.get("progress"),
-                "priority": j.get("priority"),
-                "created_at": j.get("created_at"),
-                "message": j.get("message"),
-            }
-            for j in self.jobs.values()
-            if j.get("user_id") == user_id
-        ]
-
     async def get_reviews(self, secid: str) -> List[Dict]:
         """Get reviews for a security from database only (no parsing)"""
         try:
-            secid_upper = secid.upper()
+            db_reviews = await self.db.get_reviews(secid.upper(), days=7)
 
-            # Get reviews from database (for current week)
-            db_reviews = await self.db.get_reviews(secid_upper, days=7)
-
-            # Convert to format with all sentiment data
             result = []
             for review in db_reviews:
                 img_path = review.get('review_img', '')
@@ -541,109 +226,6 @@ class InvestmentAnalyzer:
             return []
 
 
-# Global app instance
-analyzer = InvestmentAnalyzer()
-
-
-def setup_i18n(app, locale='en'):
-    translations = gettext.translation(
-        'messages', localedir='translations', languages=[locale], fallback=True
-    )
-    app['translator'] = translations
-    return translations.gettext
-
-
-async def set_lang(request):
-    lang = request.match_info['lang']
-    resp = web.HTTPFound("/")
-    resp.set_cookie("lang", lang)
-    return resp
-
-
-@aiohttp_jinja2.template('index.html')
-async def index_handler(request: web.Request) -> web.Response:
-    """Main page handler"""
-    locale = request.cookies.get("lang", "en")
-    _ = setup_i18n(request.app, locale)
-    return {"_": _, "lang": locale}
-
-
-async def api_portfolio_calculate_handler(request: web.Request) -> web.Response:
-    """Calculate portfolio returns"""
-    try:
-        data = await request.json()
-        capital = float(data.get('capital', 0))
-        # List of {secid, weight, price}
-        securities = data.get('securities', [])
-
-        if capital <= 0 or not securities:
-            return web.json_response({'error': 'Invalid input'}, status=400)
-
-        # Calculate portfolio
-        total_weight = sum(s.get('weight', 0) for s in securities)
-        if total_weight == 0:
-            return web.json_response({'error': 'Total weight must be > 0'}, status=400)
-
-        portfolio_value = 0
-        portfolio_yield = 0
-
-        for sec in securities:
-            weight = sec.get('weight', 0) / total_weight
-            price = sec.get('price', 0)
-            allocation = capital * weight
-            shares = allocation / price if price > 0 else 0
-
-            # Get security data for yield calculation
-            secid = sec.get('secid')
-            if secid:
-                sec_data = await analyzer.get_security_data(secid, days=30)
-                # Simple yield calculation (can be improved)
-                if sec_data and sec_data.get('indicators'):
-                    # Use some indicator or prediction for yield estimate
-                    pass
-
-            portfolio_value += shares * price
-
-        # Calculate expected yield based on predictions if available
-        total_predicted_yield = 0
-        for sec in securities:
-            secid = sec.get('secid')
-            if secid:
-                try:
-                    sec_data = await analyzer.get_security_data(secid, days=30)
-                    if sec_data and sec_data.get('predictions'):
-                        # Use average prediction change
-                        predictions = sec_data.get('predictions', [])
-                        if predictions:
-                            current_price = sec.get('price', 0)
-                            avg_prediction = sum(
-                                p.get('price', current_price) for p in predictions) / len(predictions)
-                            if current_price > 0:
-                                sec_yield = (
-                                    (avg_prediction - current_price) / current_price) * 100
-                                weight = sec.get('weight', 0) / total_weight
-                                total_predicted_yield += sec_yield * weight
-                except:
-                    pass
-
-        # Use predicted yield if available, otherwise simple calculation
-        if total_predicted_yield != 0:
-            portfolio_yield = total_predicted_yield
-        else:
-            portfolio_yield = ((portfolio_value - capital) /
-                               capital * 100) if capital > 0 else 0
-
-        return web.json_response({
-            'capital': capital,
-            'portfolio_value': round(portfolio_value, 2),
-            'expected_yield': round(portfolio_yield, 2),
-            'securities': securities
-        })
-    except Exception as e:
-        logger.error(f"Error calculating portfolio: {e}")
-        return web.json_response({'error': str(e)}, status=500)
-
-
 def serialize(obj):
     if isinstance(obj, datetime):
         return obj.isoformat()
@@ -663,302 +245,362 @@ def serialize(obj):
     return obj
 
 
-async def api_security_handler(request: web.Request) -> web.Response:
-    """API endpoint for security data"""
-    secid = request.match_info.get('secid', '').upper()
-    if not secid:
-        return web.json_response({'error': 'secid required'}, status=400)
-
-    days = int(request.query.get('days', 60))
-    data = await analyzer.get_security_data(secid, days=days)
-    data = serialize(data)
-    return web.json_response(data)
+def json_response(data, status: int = 200) -> Response:
+    return Response(
+        json.dumps(serialize(data), ensure_ascii=False),
+        status=status,
+        content_type="application/json; charset=utf-8",
+    )
 
 
-async def api_indexes_handler(request: web.Request) -> web.Response:
-    """API endpoint for indexes"""
-    indexes = await analyzer.get_indexes()
-    return web.json_response(indexes)
+analyzer = InvestmentAnalyzer()
+app = Quart(
+    __name__,
+    static_folder='static',
+    static_url_path='/static',
+    template_folder='static/html',
+)
+job_store: JobStore = None
 
 
-async def api_index_securities_handler(request: web.Request) -> web.Response:
-    """API endpoint for index securities"""
-    indexid = request.match_info.get('indexid', '')
-    if not indexid:
-        return web.json_response({'error': 'indexid required'}, status=400)
-
-    securities = await analyzer.get_index_securities(indexid)
-    return web.json_response(securities)
+def setup_i18n(locale='en'):
+    translations = gettext.translation(
+        'messages', localedir='translations', languages=[locale], fallback=True
+    )
+    return translations.gettext
 
 
-async def search_securities_handler(request: web.Request) -> web.Response:
-    """Search securities"""
-    query = request.query.get('q', '').upper()
+@app.before_serving
+async def on_startup():
+    global job_store
+    await analyzer.init()
+    job_store = JobStore(aioredis.from_url(REDIS_URL))
+
+
+@app.route('/')
+async def index_handler():
+    locale = request.cookies.get("lang", "en")
+    _ = setup_i18n(locale)
+    return await render_template('index.html', _=_, lang=locale)
+
+
+@app.route('/lang/<lang>')
+async def set_lang(lang):
+    resp = redirect("/")
+    resp.set_cookie("lang", lang)
+    return resp
+
+
+@app.route('/media/<path:filename>')
+async def media_handler(filename):
+    return await send_from_directory('media', filename)
+
+
+@app.route('/api/indexes')
+async def api_indexes_handler():
+    return json_response(await analyzer.get_indexes())
+
+
+@app.route('/api/index/<indexid>/securities')
+async def api_index_securities_handler(indexid):
+    return json_response(await analyzer.get_index_securities(indexid))
+
+
+@app.route('/api/security/<secid>')
+async def api_security_handler(secid):
+    days = int(request.args.get('days', 60))
+    data = await analyzer.get_security_data(secid.upper(), days=days)
+    return json_response(data)
+
+
+@app.route('/api/security/<secid>/dividends')
+async def api_dividends_handler(secid):
+    try:
+        async with MOEXClient(cache_manager=analyzer.cache) as client:
+            return json_response(await client.get_dividends(secid.upper()))
+    except Exception as e:
+        logger.error(f"Error getting dividends: {e}")
+        return json_response({'error': str(e)}, status=500)
+
+
+@app.route('/api/security/<secid>/coupons')
+async def api_coupons_handler(secid):
+    try:
+        async with MOEXClient(cache_manager=analyzer.cache) as client:
+            return json_response(await client.get_coupons(secid.upper()))
+    except Exception as e:
+        logger.error(f"Error getting coupons: {e}")
+        return json_response({'error': str(e)}, status=500)
+
+
+@app.route('/api/security/<secid>/yields')
+async def api_yields_handler(secid):
+    try:
+        async with MOEXClient(cache_manager=analyzer.cache) as client:
+            yields = await client.get_yields(
+                secid.upper(),
+                from_date=request.args.get('from'),
+                till_date=request.args.get('till'),
+            )
+            return json_response(yields)
+    except Exception as e:
+        logger.error(f"Error getting yields: {e}")
+        return json_response({'error': str(e)}, status=500)
+
+
+@app.route('/api/security/<secid>/specification')
+async def api_specification_handler(secid):
+    try:
+        async with MOEXClient(cache_manager=analyzer.cache) as client:
+            return json_response(await client.get_security_specification(secid.upper()))
+    except Exception as e:
+        logger.error(f"Error getting specification: {e}")
+        return json_response({'error': str(e)}, status=500)
+
+
+@app.route('/api/security/<secid>/history/sessions')
+async def api_history_sessions_handler(secid):
+    try:
+        async with MOEXClient(cache_manager=analyzer.cache) as client:
+            history = await client.get_history_by_sessions(
+                secid.upper(),
+                engine=request.args.get('engine', 'stock'),
+                market=request.args.get('market', 'shares'),
+                board=request.args.get('board', 'TQBR'),
+                from_date=request.args.get('from'),
+                till_date=request.args.get('till'),
+            )
+            return json_response(history)
+    except Exception as e:
+        logger.error(f"Error getting history: {e}")
+        return json_response({'error': str(e)}, status=500)
+
+
+@app.route('/api/news')
+async def api_news_handler():
+    try:
+        async with MOEXClient(cache_manager=analyzer.cache) as client:
+            news = await client.get_news(
+                lang=request.args.get('lang', 'ru'),
+                limit=int(request.args.get('limit', 10)),
+            )
+            return json_response(news)
+    except Exception as e:
+        logger.error(f"Error getting news: {e}")
+        return json_response({'error': str(e)}, status=500)
+
+
+@app.route('/api/search')
+async def search_securities_handler():
+    query = request.args.get('q', '').upper()
     if not query or len(query) < 2:
-        return web.json_response([])
+        return json_response([])
 
     try:
         async with MOEXClient(cache_manager=analyzer.cache) as client:
             all_securities = await client.get_securities()
-            # Simple search by SECID or SECNAME
             results = [
                 s for s in all_securities
                 if query in s.get('SECID', '').upper() or query in s.get('SECNAME', '').upper()
-            ][:20]  # Limit to 20 results
-            return web.json_response(results)
+            ][:20]
+            return json_response(results)
     except Exception as e:
         logger.error(f"Error searching securities: {e}")
-        return web.json_response([])
+        return json_response([])
 
 
-async def api_dividends_handler(request: web.Request) -> web.Response:
-    """API endpoint for dividends"""
-    secid = request.match_info.get('secid', '').upper()
-    if not secid:
-        return web.json_response({'error': 'secid required'}, status=400)
-
+@app.route('/api/portfolio/calculate', methods=['POST'])
+async def api_portfolio_calculate_handler():
+    """Calculate portfolio returns"""
     try:
-        async with MOEXClient(cache_manager=analyzer.cache) as client:
-            dividends = await client.get_dividends(secid)
-            return web.json_response(serialize(dividends))
+        data = await request.get_json()
+        capital = float(data.get('capital', 0))
+        securities = data.get('securities', [])  # List of {secid, weight, price}
+
+        if capital <= 0 or not securities:
+            return json_response({'error': 'Invalid input'}, status=400)
+
+        total_weight = sum(s.get('weight', 0) for s in securities)
+        if total_weight == 0:
+            return json_response({'error': 'Total weight must be > 0'}, status=400)
+
+        portfolio_value = 0.0
+        total_predicted_yield = 0.0
+        has_forecast = False
+
+        for sec in securities:
+            weight = sec.get('weight', 0) / total_weight
+            price = sec.get('price', 0)
+            allocation = capital * weight
+            shares = allocation / price if price > 0 else 0
+            portfolio_value += shares * price
+
+            secid = sec.get('secid')
+            if not secid or price <= 0:
+                continue
+            try:
+                sec_data = await analyzer.get_security_data(secid, days=120)
+                predictions = (sec_data or {}).get('predictions') or []
+                if predictions:
+                    avg_prediction = sum(
+                        p.get('price', price) for p in predictions) / len(predictions)
+                    sec_yield = ((avg_prediction - price) / price) * 100
+                    total_predicted_yield += sec_yield * weight
+                    has_forecast = True
+            except Exception as e:
+                logger.error(f"Error forecasting {secid}: {e}")
+
+        return json_response({
+            'capital': capital,
+            'portfolio_value': round(portfolio_value, 2),
+            'expected_yield': round(total_predicted_yield, 2) if has_forecast else 0.0,
+            # 'forecast' = derived from model predictions; 'none' = no data, 0 is honest
+            'yield_source': 'forecast' if has_forecast else 'none',
+            'securities': securities
+        })
     except Exception as e:
-        logger.error(f"Error getting dividends: {e}")
-        return web.json_response({'error': str(e)}, status=500)
+        logger.error(f"Error calculating portfolio: {e}")
+        return json_response({'error': str(e)}, status=500)
 
 
-async def api_coupons_handler(request: web.Request) -> web.Response:
-    """API endpoint for coupons"""
-    secid = request.match_info.get('secid', '').upper()
-    if not secid:
-        return web.json_response({'error': 'secid required'}, status=400)
+# ---------------- Review parsing jobs (executed by celery worker) ----------------
 
+@app.route('/api/security/<secid>/reviews')
+async def api_reviews_handler(secid):
     try:
-        async with MOEXClient(cache_manager=analyzer.cache) as client:
-            coupons = await client.get_coupons(secid)
-            return web.json_response(serialize(coupons))
-    except Exception as e:
-        logger.error(f"Error getting coupons: {e}")
-        return web.json_response({'error': str(e)}, status=500)
-
-
-async def api_yields_handler(request: web.Request) -> web.Response:
-    """API endpoint for yields"""
-    secid = request.match_info.get('secid', '').upper()
-    if not secid:
-        return web.json_response({'error': 'secid required'}, status=400)
-
-    from_date = request.query.get('from')
-    till_date = request.query.get('till')
-
-    try:
-        async with MOEXClient(cache_manager=analyzer.cache) as client:
-            yields = await client.get_yields(secid, from_date=from_date, till_date=till_date)
-            return web.json_response(serialize(yields))
-    except Exception as e:
-        logger.error(f"Error getting yields: {e}")
-        return web.json_response({'error': str(e)}, status=500)
-
-
-async def api_news_handler(request: web.Request) -> web.Response:
-    """API endpoint for news"""
-    limit = int(request.query.get('limit', 10))
-    lang = request.query.get('lang', 'ru')
-
-    try:
-        async with MOEXClient(cache_manager=analyzer.cache) as client:
-            news = await client.get_news(lang=lang, limit=limit)
-            return web.json_response(serialize(news))
-    except Exception as e:
-        logger.error(f"Error getting news: {e}")
-        return web.json_response({'error': str(e)}, status=500)
-
-
-async def api_specification_handler(request: web.Request) -> web.Response:
-    """API endpoint for security specification"""
-    secid = request.match_info.get('secid', '').upper()
-    if not secid:
-        return web.json_response({'error': 'secid required'}, status=400)
-
-    try:
-        async with MOEXClient(cache_manager=analyzer.cache) as client:
-            spec = await client.get_security_specification(secid)
-            return web.json_response(serialize(spec))
-    except Exception as e:
-        logger.error(f"Error getting specification: {e}")
-        return web.json_response({'error': str(e)}, status=500)
-
-
-async def api_history_sessions_handler(request: web.Request) -> web.Response:
-    """API endpoint for history by sessions"""
-    secid = request.match_info.get('secid', '').upper()
-    if not secid:
-        return web.json_response({'error': 'secid required'}, status=400)
-
-    from_date = request.query.get('from')
-    till_date = request.query.get('till')
-    engine = request.query.get('engine', 'stock')
-    market = request.query.get('market', 'shares')
-    board = request.query.get('board', 'TQBR')
-
-    try:
-        async with MOEXClient(cache_manager=analyzer.cache) as client:
-            history = await client.get_history_by_sessions(
-                secid, engine=engine, market=market, board=board,
-                from_date=from_date, till_date=till_date
-            )
-            return web.json_response(serialize(history))
-    except Exception as e:
-        logger.error(f"Error getting history: {e}")
-        return web.json_response({'error': str(e)}, status=500)
-
-
-async def api_reviews_handler(request: web.Request) -> web.Response:
-    """API endpoint for reviews"""
-    secid = request.match_info.get('secid', '').upper()
-    if not secid:
-        return web.json_response({'error': 'secid required'}, status=400)
-
-    try:
-        reviews = await analyzer.get_reviews(secid)
-        text = json.dumps(reviews, ensure_ascii=False)
-        return web.Response(text=text, content_type="application/json", charset="utf-8")
+        return json_response(await analyzer.get_reviews(secid.upper()))
     except Exception as e:
         logger.error(f"Error getting reviews: {e}")
-        return web.json_response({'error': str(e)}, status=500)
+        return json_response({'error': str(e)}, status=500)
 
 
-async def api_should_parse_reviews_handler(request: web.Request) -> web.Response:
-    """API endpoint for should parse reviews"""
-    secid = request.match_info.get('secid', '').upper()
-    if not secid:
-        return web.json_response({'error': 'secid required'}, status=400)
-
+@app.route('/api/security/<secid>/reviews/meta')
+async def api_should_parse_reviews_handler(secid):
     try:
-        should_parse = await analyzer.should_parse_reviews(secid)
-        return web.json_response({'should_parse': should_parse}, status=200)
+        _, should_parse = await analyzer.db.should_parse_reviews(secid.upper())
+        return json_response({'should_parse': should_parse})
     except Exception as e:
-        logger.error(f"Error getting reviews: {e}")
-        return web.json_response({'error': str(e)}, status=500)
+        logger.error(f"Error getting reviews meta: {e}")
+        return json_response({'error': str(e)}, status=500)
 
 
-async def api_reviews_progress_handler(request: web.Request) -> web.Response:
-    """API endpoint for parsing progress"""
-    secid = request.match_info.get('secid', '').upper()
-    if not secid:
-        return web.json_response({'error': 'secid required'}, status=400)
-
+@app.route('/api/security/<secid>/reviews/progress')
+async def api_reviews_progress_handler(secid):
     try:
-        progress = analyzer.get_parsing_progress(secid)
-        return web.json_response(progress, status=200)
+        progress = await job_store.aget_progress(secid.upper())
+        if not progress:
+            progress = {'total': 0, 'current': 0, 'status': 'idle', 'error': None}
+        return json_response(progress)
     except Exception as e:
         logger.error(f"Error getting progress: {e}")
-        return web.json_response({'error': str(e)}, status=500)
+        return json_response({'error': str(e)}, status=500)
 
 
-async def api_reviews_start_parsing_handler(request: web.Request) -> web.Response:
-    """API endpoint to start parsing reviews"""
-    secid = request.match_info.get('secid', '').upper()
-    if not secid:
-        return web.json_response({'error': 'secid required'}, status=400)
-
+@app.route('/api/security/<secid>/reviews/start', methods=['POST'])
+async def api_reviews_start_parsing_handler(secid):
     try:
-        # Use client IP as simple user identifier (since there's no auth)
-        user_id = request.remote or "anonymous"
-        job = await analyzer.start_parsing_reviews(secid, user_id=user_id, priority="interactive")
-        return web.json_response(
-            {
-                'status': job.get("status", "queued"),
-                'job_id': job.get("id"),
-                'secid': job.get("secid"),
-                'progress': job.get("progress", {}),
-            },
-            status=200
-        )
+        secid_upper = secid.upper()
+        user_id = request.remote_addr or "anonymous"
+
+        # Reuse a running job for the same security+user; a "queued" job is
+        # re-sent to celery — its message may have been lost on worker restart
+        # (the task itself is idempotent: should_parse gates a double run)
+        job = await job_store.afind_active_job(secid_upper, user_id)
+        if not job:
+            job = new_job(secid_upper, user_id)
+            await job_store.asave_job(job)
+            await job_store.r.set(
+                f"progress:{secid_upper}",
+                json.dumps({'total': 0, 'current': 0, 'status': 'queued',
+                            'error': None, 'job_id': job['id']}),
+            )
+        if job.get('status') == 'queued':
+            celery.send_task("tasks.parse_reviews",
+                             args=[secid_upper, user_id, job['id']])
+            logger.info(f"Enqueued job {job['id']} for {secid_upper} by {user_id}")
+
+        return json_response({
+            'status': job.get('status', 'queued'),
+            'job_id': job.get('id'),
+            'secid': job.get('secid'),
+            'progress': job.get('progress', {}),
+        })
     except Exception as e:
         logger.error(f"Error starting parsing: {e}")
-        return web.json_response({'error': str(e)}, status=500)
+        return json_response({'error': str(e)}, status=500)
 
 
-async def api_reviews_jobs_handler(request: web.Request) -> web.Response:
-    """API endpoint to list jobs for current user"""
+@app.route('/api/reviews/jobs')
+async def api_reviews_jobs_handler():
     try:
-        user_id = request.remote or "anonymous"
-        jobs = analyzer.get_user_jobs(user_id)
-        return web.json_response({'jobs': jobs}, status=200)
+        user_id = request.remote_addr or "anonymous"
+        jobs = await job_store.aget_user_jobs(user_id)
+        return json_response({'jobs': jobs})
     except Exception as e:
         logger.error(f"Error getting jobs: {e}")
-        return web.json_response({'error': str(e)}, status=500)
+        return json_response({'error': str(e)}, status=500)
 
 
-async def api_reviews_cancel_job_handler(request: web.Request) -> web.Response:
-    """API endpoint to cancel a job"""
-    job_id = request.match_info.get('job_id', '')
-    if not job_id:
-        return web.json_response({'error': 'job_id required'}, status=400)
-
+@app.route('/api/reviews/jobs/<job_id>/cancel', methods=['POST'])
+async def api_reviews_cancel_job_handler(job_id):
     try:
-        user_id = request.remote or "anonymous"
-        ok = analyzer.cancel_job(job_id, user_id=user_id)
+        user_id = request.remote_addr or "anonymous"
+        ok = await job_store.arequest_cancel(job_id, user_id=user_id)
         if not ok:
-            return web.json_response({'error': 'job not found or not owned by user'}, status=404)
-        return web.json_response({'status': 'cancel_requested'}, status=200)
+            return json_response({'error': 'job not found or not owned by user'}, status=404)
+        return json_response({'status': 'cancel_requested'})
     except Exception as e:
         logger.error(f"Error cancelling job: {e}")
-        return web.json_response({'error': str(e)}, status=500)
+        return json_response({'error': str(e)}, status=500)
 
 
-def create_app() -> web.Application:
-    """Create and configure application"""
-    app = web.Application()
-    aiohttp_jinja2.setup(app, loader=jinja2.FileSystemLoader('static/html'))
+# ---------------- Advisor: weekly summary reports ----------------
 
-    # Routes
-    app.router.add_get('/', index_handler)
-    app.router.add_get('/lang/{lang}', set_lang)
-    app.router.add_get('/api/indexes', api_indexes_handler)
-    app.router.add_get(
-        '/api/index/{indexid}/securities', api_index_securities_handler)
-    app.router.add_get('/api/security/{secid}', api_security_handler)
-    app.router.add_get(
-        '/api/security/{secid}/dividends', api_dividends_handler)
-    app.router.add_get('/api/security/{secid}/coupons', api_coupons_handler)
-    app.router.add_get('/api/security/{secid}/yields', api_yields_handler)
-    app.router.add_get(
-        '/api/security/{secid}/specification', api_specification_handler)
-    app.router.add_get(
-        '/api/security/{secid}/history/sessions', api_history_sessions_handler)
-    app.router.add_get('/api/security/{secid}/reviews', api_reviews_handler)
-    app.router.add_get(
-        '/api/security/{secid}/reviews/meta', api_should_parse_reviews_handler)
-    app.router.add_get(
-        '/api/security/{secid}/reviews/progress', api_reviews_progress_handler)
-    app.router.add_post(
-        '/api/security/{secid}/reviews/start', api_reviews_start_parsing_handler)
-    app.router.add_get('/api/reviews/jobs', api_reviews_jobs_handler)
-    app.router.add_post(
-        '/api/reviews/jobs/{job_id}/cancel', api_reviews_cancel_job_handler)
-    app.router.add_get('/api/news', api_news_handler)
-    app.router.add_get('/api/search', search_securities_handler)
-    app.router.add_post('/api/portfolio/calculate',
-                        api_portfolio_calculate_handler)
+@app.route('/summary')
+async def summary_list_handler():
+    locale = request.cookies.get("lang", "en")
+    _ = setup_i18n(locale)
+    reports = await analyzer.db.get_reports(limit=20)
+    return await render_template('summary.html', _=_, lang=locale,
+                                 reports=reports, report=None)
 
-    # Static files
-    app.router.add_static('/static/', path='static/', name='static')
-    app.router.add_static('/media/', path='media/', name='media')
 
-    # Startup and cleanup
-    async def on_startup(app):
-        await analyzer.init()
+@app.route('/summary/<int:report_id>')
+async def summary_detail_handler(report_id):
+    locale = request.cookies.get("lang", "en")
+    _ = setup_i18n(locale)
+    report = await analyzer.db.get_report(report_id)
+    if not report:
+        return redirect('/summary')
+    reports = await analyzer.db.get_reports(limit=20)
+    return await render_template('summary.html', _=_, lang=locale,
+                                 reports=reports, report=report,
+                                 report_json=json.dumps(serialize(report), ensure_ascii=False))
 
-    async def on_cleanup(app):
-        await analyzer.cleanup()
 
-    app.on_startup.append(on_startup)
-    app.on_cleanup.append(on_cleanup)
+@app.route('/api/reports/<int:report_id>/export')
+async def api_report_export_handler(report_id):
+    """Full report metadata as JSON — made to be fed into Claude Code
+    for error analysis ("where is the program wrong, what to rewrite")."""
+    report = await analyzer.db.get_report(report_id)
+    if not report:
+        return json_response({'error': 'report not found'}, status=404)
+    export = {
+        'generated_at': datetime.now().isoformat(),
+        'config': CONFIG.get('advisor', {}),
+        'report': report,
+    }
+    resp = json_response(export)
+    resp.headers['Content-Disposition'] = f'attachment; filename="report_{report_id}.json"'
+    return resp
 
-    return app
+
+@app.route('/api/advisor/run', methods=['POST'])
+async def api_advisor_run_handler():
+    """Manual trigger for the weekly pipeline (runs in celery worker)"""
+    task = celery.send_task("tasks.run_weekly_advisor")
+    return json_response({'status': 'enqueued', 'task_id': task.id})
 
 
 if __name__ == '__main__':
-    app = create_app()
-    web.run_app(app, host='0.0.0.0', port=8080)
+    app.run(host='0.0.0.0', port=8080)

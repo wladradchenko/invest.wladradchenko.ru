@@ -13,10 +13,13 @@ class MOEXClient:
 
     BASE_URL = "https://iss.moex.com/iss"
 
-    def __init__(self, cache_manager: Optional[CacheManager] = None):
+    def __init__(self, cache_manager: Optional[CacheManager] = None, throttle=None):
         self.logger = logging.getLogger("moex")
         self.session: Optional[aiohttp.ClientSession] = None
         self.cache = cache_manager
+        # Optional async callable awaited before each real HTTP request
+        # (cache hits skip it). Used by the advisor to rate-limit ISS calls.
+        self.throttle = throttle
 
     async def __aenter__(self):
         self.session = aiohttp.ClientSession()
@@ -30,22 +33,30 @@ class MOEXClient:
         """Query MOEX ISS API with caching"""
         url = f"{self.BASE_URL}/{method}.json"
 
+        # ISS expects "from", which is a reserved word in Python kwargs;
+        # without this rename ISS silently ignores "from_" and returns
+        # candles from the very start of trading history (2007+).
+        params = {("from" if k == "from_" else k): v for k, v in kwargs.items()}
+
         # Try cache first
         if use_cache and self.cache:
             cached_data = self.cache.get(
-                url, kwargs, ttl_hours=cache_ttl_hours)
+                url, params, ttl_hours=cache_ttl_hours)
             if cached_data is not None:
                 self.logger.debug(f"Cache hit: {method}")
                 return cached_data
 
+        if self.throttle:
+            await self.throttle()
+
         # Fetch from API
         try:
-            async with self.session.get(url, params=kwargs, timeout=aiohttp.ClientTimeout(total=10)) as response:
+            async with self.session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as response:
                 if response.status == 200:
                     data = await response.json()
                     # Cache the result
                     if use_cache and self.cache:
-                        self.cache.set(url, data, kwargs)
+                        self.cache.set(url, data, params)
                     return data
                 else:
                     self.logger.error(f"MOEX API error: {response.status}")
@@ -83,19 +94,27 @@ class MOEXClient:
         return None
 
     async def get_candles(self, secid: str, board: str = "TQBR", market: str = "shares",
-                          interval: int = 24, days: int = 30) -> List[Dict]:
+                          interval: int = 24, days: int = 30,
+                          engine: str = "stock",
+                          from_date: str = None, till_date: str = None,
+                          use_cache: bool = True) -> List[Dict]:
         """
         Get candles for security
         interval: 1 (1 min), 10 (10 min), 60 (1 hour), 24 (1 day), 7 (1 week), 31 (1 month)
+        from_date/till_date (YYYY-MM-DD) override the days-based window,
+        used for incremental sync by the advisor.
         """
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=days)
+        if not till_date:
+            till_date = datetime.now().strftime("%Y-%m-%d")
+        if not from_date:
+            from_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
 
         data = await self.query(
-            f"engines/stock/markets/{market}/boards/{board}/securities/{secid}/candles",
+            f"engines/{engine}/markets/{market}/boards/{board}/securities/{secid}/candles",
+            use_cache=use_cache,
             interval=interval,
-            from_=start_date.strftime("%Y-%m-%d"),
-            till=end_date.strftime("%Y-%m-%d")
+            from_=from_date,
+            till=till_date
         )
 
         if data:

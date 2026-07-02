@@ -1,13 +1,20 @@
-[database]
-host='127.0.0.1'
-port=3306
-user='root'  # wladradchenko.ru
-password='vasexperts'  # Z6VOVmf0wS51
-db='moex'
-
-[tinkoff]
-readonly="t.mt2asr9kXMW9lWgHjIs-_-8SwM3Z7FSWrOEW6A-QX7kIkcm4_pRaNx7x80xD2loBu8rFWtzKaeHxfu-z3sjbow"
-
-[telegram]
-token = "5972811988:AAHIT-dqiHGMqEyOBeANU9eHIVREDu3N3cM"  # token telegram bot
-chat_id = 5464853159  # chat for messages from bot
+[advisor]
+# Вселенная активов
+index = "IMOEX"                                              # акции: состав индекса
+bonds = ["SU26238RMFS4", "SU26239RMFS2", "SU26232RMFS7"]     # ОФЗ: длинная(2041)/средняя(2031)/короткая(2027)
+money_market = "LQDT"                                        # денежный рынок
+gold = "GLDRUB_TOM"                                          # золото (валютный рынок)
+gold_fallback = "GOLD"                                       # ETF золота, если CETS недоступен
+# Пороги стратегии
+buy_threshold = 0.70          # вход в позицию
+hold_threshold = 0.55         # гистерезис: удержание прошлой BUY
+sentiment_veto_threshold = -0.3
+sentiment_min_posts = 5
+max_reviews_per_job = 300     # анализировать не больше N свежих отзывов за задачу (SBER даёт тысячи)
+high_rate_level = 12.0        # ставка ЦБ выше — кэш/LQDT приоритетнее акций
+# Расписание (Europe/Moscow)
+weekly_day = "sat"
+weekly_hour = 8
+midweek_day = "thu"
+midweek_hour = 16             # в шапке плана было 16:00, в C1 — 12:00; поменяй тут при желании
+alarm_move = 0.05             # аларм: рекомендация ушла против нас на 5%+ к четвергу

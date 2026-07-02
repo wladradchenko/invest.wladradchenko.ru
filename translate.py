@@ -1,4 +1,5 @@
 import os
+import asyncio
 import aiohttp
 import pathlib
 import logging
@@ -126,4 +127,7 @@ class Translate:
         if translation is None:
             print("Error. The language pack is not installed.")
             return text
-        return translation.translate(text)
+        # argos translate is a heavy synchronous CPU call: run it in the default
+        # executor so it does not freeze the event loop for the whole server
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, translation.translate, text)

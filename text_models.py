@@ -19,6 +19,13 @@ except ImportError:
     FLASH_ATTN_2_AVAILABLE = False
 
 
+def resolve_device(device: str = None) -> str:
+    """Requested device, downgraded to cpu when CUDA is not available."""
+    if device != "cpu" and torch.cuda.is_available():
+        return "cuda"
+    return "cpu"
+
+
 class SentimentAnalyzer:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     MODEL_PATH = os.path.join(BASE_DIR, "model")
@@ -26,8 +33,8 @@ class SentimentAnalyzer:
     def __init__(self, device="cuda"):
         self.tokenizer = AutoTokenizer.from_pretrained("yiyanghkust/finbert-tone", cache_dir=self.MODEL_PATH)
         self.model = AutoModelForSequenceClassification.from_pretrained("yiyanghkust/finbert-tone", cache_dir=self.MODEL_PATH)
-        self.device = device
-        self.model.to(device)
+        self.device = resolve_device(device)
+        self.model.to(self.device)
 
     def analyze(self, text: str) -> dict:
         inputs = self.tokenizer(text, return_tensors="pt", truncation=True, max_length=512).to(self.device)
@@ -42,8 +49,12 @@ class EmotionAnalyzer:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     MODEL_PATH = os.path.join(BASE_DIR, "model")
 
+    # The model emits 6 labels (sadness, joy, love, anger, fear, surprise);
+    # DB columns anticipation/disgust/trust are legacy and stay at 0.
+    LABEL_MAP = {"love": "trust"}
+
     def __init__(self, device="cuda"):
-        device_id = 0 if device == "cuda" else -1
+        device_id = 0 if resolve_device(device) == "cuda" else -1
         repo_id = "bhadresh-savani/bert-base-uncased-emotion"
 
         files = list_repo_files(repo_id)
@@ -66,9 +77,12 @@ class EmotionAnalyzer:
             return {}
 
         classes = self.classifier(text[:512])
-        if isinstance(classes[0], list):
-            return {c.get('label'): round(c.get('score'), 4) for c in classes[0] if isinstance(c, dict) and c.get('score') >= 0.3}
-        return {c.get('label'): round(c.get('score'), 4) for c in classes[0] if isinstance(c, dict) and c.get('score') >= 0.3}
+        items = classes[0] if isinstance(classes[0], list) else classes
+        return {
+            self.LABEL_MAP.get(c.get('label'), c.get('label')): round(c.get('score'), 4)
+            for c in items
+            if isinstance(c, dict) and c.get('score') >= 0.3
+        }
 
 
 class SmolVLM2:
@@ -79,7 +93,8 @@ class SmolVLM2:
         if not os.path.exists(self.MODEL_PATH):
             os.makedirs(self.MODEL_PATH, exist_ok=True)
 
-        if torch.cuda.is_available() and device != "cpu":
+        device = resolve_device(device)
+        if device != "cpu":
             properties = torch.cuda.get_device_properties(device)
             available_vram_gb = (properties.total_memory - torch.cuda.memory_allocated()) / (1024 ** 3)
 
@@ -113,19 +128,27 @@ class SmolVLM2:
             _attn_implementation="flash_attention_2" if FLASH_ATTN_2_AVAILABLE else None
         ) if repo_id else None
 
+    @property
+    def available(self) -> bool:
+        return self.model is not None and self.processor is not None
+
     def generate(self, messages: list, max_new_tokens: int = 64):
-        if self.processor is None or self.model is None:
+        if not self.available:
             return None
         inputs = self.processor.apply_chat_template(
-            messages[:8192],
+            messages,
             add_generation_prompt=True,
             tokenize=True,
             return_dict=True,
             return_tensors="pt",
         ).to(self.model.device, dtype=torch.bfloat16)
-        generated_ids = self.model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=True, temperature=0.7)
-        generated_output = self.processor.decode(generated_ids[0], skip_special_tokens=True).lower().split("assistant: ")[1]
-        return generated_output
+        # Greedy decoding: deterministic distillation, less noise fed to FinBERT
+        generated_ids = self.model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
+        decoded = self.processor.decode(generated_ids[0], skip_special_tokens=True).lower()
+        parts = decoded.split("assistant: ")
+        if len(parts) < 2:
+            return None
+        return parts[-1].strip()
 
     @staticmethod
     def prompt_image_analyser(image_path: str, prompt: str = None):
@@ -179,7 +202,7 @@ class SmolVLM2:
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": f"COMMENT: {text}"},
+                    {"type": "text", "text": f"COMMENT: {text[:8192]}"},
                     {"type": "text", "text": prompt}
                 ]
             }
@@ -193,48 +216,37 @@ class SmolVLM2:
 
 class TextAnalyser:
     def __init__(self, device="cuda"):
+        device = resolve_device(device)
         self.llm_analyzer = SmolVLM2(device)
-        self.sentiment_analyzer = SentimentAnalyzer(device=device)  # TODO test on CPU
-        self.emotion_analyzer = EmotionAnalyzer(device=device)  # TODO test on CPU
+        self.sentiment_analyzer = SentimentAnalyzer(device=device)
+        self.emotion_analyzer = EmotionAnalyzer(device=device)
         self.translator = Translate()
 
     async def __call__(self, text: str, img_path: str = None) -> Optional[dict]:
         if not text:
             return None
         text = await self.translator.translate(text, src_lang='Russian', trg_lang='English')
-
-        if img_path and os.path.exists(img_path):
-            text += self.llm_analyzer.process_image_analyser(img_path)
-
-        analys = self.llm_analyzer.process_text_analyser(str(text))
-        if not self.process_text_sentiment(analys):
-            return None
-
-        prediction = self.sentiment_analyzer.analyze(analys)
-        negative = prediction.get("negative")
-        positive = prediction.get("positive")
-        neutral = prediction.get("neutral")
-
-        emotion = self.emotion_analyzer.analyze(analys)
-        if positive == negative or neutral > 0.5:
-            return emotion
-        if negative > 0.5 or negative > positive:
-            emotion["negative"] = negative
-            return emotion
-        emotion["positive"] = positive
-        return emotion
+        return self._analyze_neural_networks_sync(str(text), img_path)
 
     def _analyze_neural_networks_sync(self, text: str, img_path: str = None) -> Optional[dict]:
         """Synchronous version of neural network analysis (for thread pool execution)"""
         if not text:
             return None
 
-        # Process image if provided
-        if img_path and os.path.exists(img_path):
-            text += self.llm_analyzer.process_image_analyser(img_path)
+        if self.llm_analyzer.available:
+            # Process image if provided
+            if img_path and os.path.exists(img_path):
+                text += self.llm_analyzer.process_image_analyser(img_path) or ""
 
-        # Analyze text with LLM
-        analys = self.llm_analyzer.process_text_analyser(str(text))
+            # Distill the raw comment into coherent text with the LLM
+            analys = self.llm_analyzer.process_text_analyser(str(text))
+            if not analys or analys.lstrip().startswith("invalid"):
+                return None
+        else:
+            # CPU: the GPU-only distillation step is skipped, sentiment models
+            # run directly on the translated text; keyword filter below
+            analys = str(text)
+
         if not self.process_text_sentiment(analys):
             return None
 
@@ -259,6 +271,8 @@ class TextAnalyser:
 
     @staticmethod
     def process_text_sentiment(text: str) -> bool:
+        if not text:
+            return False
         invest_terms = ["buy", "hold", "sell", "stock", "bond", "shares", "dividend", "earnings", "guidance", "revenue", "ebitda", "market", "investor"]
         if not any(t in text.lower() for t in invest_terms):
             return False

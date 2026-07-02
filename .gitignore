@@ -100,3 +100,9 @@ htmlcov/
 .cache/
 requests_cache/
 responses_cache/
+
+# Local environment variables
+.env
+
+# Celery beat state
+celerybeat-schedule

@@ -27,7 +27,7 @@ class PulseParser(BaseParser):
         "декабря": 12,
     }
 
-    def parse_date(self, date_str: str):
+    def parse_date(self, date_str: str) -> datetime:
         date_str = date_str.strip()
         now = datetime.now()
 
@@ -46,9 +46,9 @@ class PulseParser(BaseParser):
             month = self.MONTHS_RU[month_str.lower()]
             dt = datetime.strptime(f"{day}-{month}-{year} {time_part}", "%d-%m-%Y %H:%M")
 
-        return dt.strftime("%Y-%m-%d %H:%M")
+        return dt
 
-    def get_date(self, time_elem):
+    def get_date(self, time_elem) -> datetime:
         for elem in time_elem:
             date = self.parse_date(elem.get_text(strip=True))
             if date:
@@ -61,25 +61,26 @@ class PulseParser(BaseParser):
         duplicate_comments = []
         secid_upper = secid.upper()
         url = f"{self.BASE_URL}/{secid_upper}/pulse/"
+        start = self.normalize_start_date(start_date)
 
         html = await self.fetch_html(url)
         if not html:
             return reviews
-        
-        try:
-            soup = BeautifulSoup(html, 'lxml')
-            comments = soup.find_all(attrs={'data-qa-file': 'TextLineCollapse'})
-            for comment in comments:
+
+        soup = BeautifulSoup(html, 'lxml')
+        comments = soup.find_all(attrs={'data-qa-file': 'TextLineCollapse'})
+        for comment in comments:
+            try:
                 text = self.clean_text(comment.get_text(strip=True))
                 if not text or len(text) < 10:
                     continue
 
                 parent = comment.find_parent(attrs={'data-qa-file': 'PulsePost'})
                 time_elem = parent.find_all('div', attrs={'data-qa-file': 'PulsePostAuthor'})
-                date_str = self.get_date(time_elem)
-                date_str = date_str if date_str else datetime.now().strftime('%Y-%m-%d %H:%M')
-                if start_date is not None and date_str.date() <= start_date:
-                    return []
+                review_date = self.get_date(time_elem) or datetime.now()
+                # Already covered by a previous parse — skip, keep newer ones
+                if not self.in_parse_window(review_date, start):
+                    continue
 
                 if self.USE_IMAGE:
                     img_elem = parent.find('img', attrs={'data-qa-file': 'ImageTiles'})
@@ -88,17 +89,18 @@ class PulseParser(BaseParser):
                 else:
                     img_filepath = None
 
-                # Filter by current week
                 if text not in duplicate_comments:
                     reviews.append({
                         'text': text,
-                        'date': date_str,
+                        'date': review_date.strftime('%Y-%m-%d %H:%M'),
                         'img': img_filepath,
                         'source': 'tbank'
                     })
                     duplicate_comments.append(text)
-        except Exception as e:
-            self.logger.info(f"Parsed {len(reviews)} reviews from tbank for {secid}")
-        
+            except Exception as e:
+                self.logger.error(f"Error parsing tbank comment: {e}")
+                continue
+
+        self.logger.info(f"Parsed {len(reviews)} reviews from tbank for {secid}")
         return reviews
 

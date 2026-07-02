@@ -247,8 +247,9 @@ class IndicatorAnalyzer:
         if TALIB_AVAILABLE:
             adx = talib.ADX(np.array(high), np.array(low), np.array(close), timeperiod=period)[-1]
         else:
-            # Simple ADX approximation
-            adx = 25.0  # Default neutral value
+            adx = self._adx_wilder(high, low, close, period)
+            if adx is None:
+                return 0.0, {'value': 0.0, 'status': 'insufficient_data', 'recommendation': 'Insufficient data'}
         
         # Get recommendation
         info = self.INDICATOR_INFO['ADX']
@@ -269,6 +270,44 @@ class IndicatorAnalyzer:
             'info': info
         }
     
+    @staticmethod
+    def _adx_wilder(high: List[float], low: List[float], close: List[float], period: int = 14) -> Optional[float]:
+        """ADX with Wilder smoothing (fallback when TA-Lib is unavailable)"""
+        n = len(close)
+        if n < period * 2 + 1:
+            return None
+        high = np.asarray(high, dtype=float)
+        low = np.asarray(low, dtype=float)
+        close = np.asarray(close, dtype=float)
+
+        up = high[1:] - high[:-1]
+        down = low[:-1] - low[1:]
+        plus_dm = np.where((up > down) & (up > 0), up, 0.0)
+        minus_dm = np.where((down > up) & (down > 0), down, 0.0)
+        tr = np.maximum(high[1:], close[:-1]) - np.minimum(low[1:], close[:-1])
+
+        def wilder_smooth(x: np.ndarray) -> np.ndarray:
+            sm = np.zeros_like(x)
+            sm[period - 1] = x[:period].sum()
+            for i in range(period, len(x)):
+                sm[i] = sm[i - 1] - sm[i - 1] / period + x[i]
+            return sm
+
+        atr = wilder_smooth(tr)[period - 1:]
+        pdm = wilder_smooth(plus_dm)[period - 1:]
+        mdm = wilder_smooth(minus_dm)[period - 1:]
+        with np.errstate(divide='ignore', invalid='ignore'):
+            pdi = 100.0 * pdm / atr
+            mdi = 100.0 * mdm / atr
+            dx = 100.0 * np.abs(pdi - mdi) / (pdi + mdi)
+        dx = dx[~np.isnan(dx)]
+        if len(dx) < period:
+            return None
+        adx = dx[:period].mean()
+        for v in dx[period:]:
+            adx = (adx * (period - 1) + v) / period
+        return float(adx)
+
     def _ema(self, prices: List[float], period: int) -> List[float]:
         """Calculate Exponential Moving Average"""
         if not prices or period <= 0:

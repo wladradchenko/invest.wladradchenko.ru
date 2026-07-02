@@ -1502,7 +1502,9 @@ function renderPredictions(predictions, container) {
       pred.date
     ).toLocaleDateString(lang === "ru" ? "ru-RU" : "en-US");
     clone.querySelector('[data-key="price"]').textContent =
-      pred.price.toFixed(2) + " ₽";
+      pred.low !== undefined && pred.high !== undefined && pred.low !== pred.high
+        ? `${pred.price.toFixed(2)} ₽ (${pred.low.toFixed(2)}–${pred.high.toFixed(2)})`
+        : pred.price.toFixed(2) + " ₽";
     container.appendChild(clone);
   });
 }

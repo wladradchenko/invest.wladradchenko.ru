@@ -20,14 +20,14 @@ class SmartLabParser(BaseParser):
         duplicate_comments = []
         secid_lower = secid.upper()
         today = datetime.now().date()
+        start = self.normalize_start_date(start_date)
 
-        if start_date is None:
-            dates_list = [(today - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(self.DAYS, 0, -1)]
+        if start is None:
+            dates_list = [(today - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(self.DAYS, -1, -1)]
         else:
-            target_date = datetime.strptime(start_date, '%Y-%m-%d').date()
-            delta_days = (today - target_date).days
+            delta_days = (today - start).days
             if delta_days < 0:
-                print("Can not be future date")
+                self.logger.warning("Can not be future date")
                 return []
             dates_list = [(today - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(delta_days + 1)]
 
@@ -75,13 +75,13 @@ class SmartLabParser(BaseParser):
                             img_url = img_elem.get('src') if img_elem else None
                             img_filepath = await self.download_file(f"{self.BASE_URL}/{img_url}") if img_url else None
                         else:
-                            img_filepath = False
+                            img_filepath = None
 
                         text = self.clean_text(text_elem.get_text(strip=True))
                         if not text or len(text) < 10:
                             continue
 
-                        if self.is_this_week(review_date) and text not in duplicate_comments:
+                        if self.in_parse_window(review_date, start) and text not in duplicate_comments:
                             reviews.append({
                                 'text': text,
                                 'date': review_date.strftime('%Y-%m-%d %H:%M'),

@@ -29,6 +29,7 @@
                 </svg>
             </div>
             <nav class="nav hidden-on-touchscreen justify-center">
+                <a href="/summary" class="relative nav-link after:absolute after:left-0 after:bottom-0 after:h-[2px] after:w-0 after:bg-white after:transition-all after:duration-300 hover:after:w-full">{{ _('Summary')}}</a>
                 <a href="https://wladradchenko.ru" target="_blank" class="relative nav-link after:absolute after:left-0 after:bottom-0 after:h-[2px] after:w-0 after:bg-white after:transition-all after:duration-300 hover:after:w-full">{{ _('About me')}}</a>
                 <a href="https://github.com/wladradchenko/invest.wladradchenko.ru" target="_blank" class="relative nav-link after:absolute after:left-0 after:bottom-0 after:h-[2px] after:w-0 after:bg-white after:transition-all after:duration-300 hover:after:w-full">{{ _('GitHub')}}</a>
                 <button onclick="openDocsModal()" class="relative nav-link after:absolute after:left-0 after:bottom-0 after:h-[2px] after:w-0 after:bg-white after:transition-all after:duration-300 hover:after:w-full">{{ _('Docs')}}</button>
@@ -228,7 +229,7 @@
         <!-- Disclaimer -->
         <template id="disclaimer-template">
             <div class="absolute z-50 p-3 rounded-md text-sm text-white border" style="border-color: var(--primary-color); background: rgba(99,102,241,0.15);">
-              <strong>⚠️ {{ _('Important')}}:</strong> {{ _('This information is not financial advice. All decisions are made at your own risk. Before making investment decisions, consult with a financial advisor.')}}
+              <strong><svg style="display:inline-block;vertical-align:-2px" width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 3L2 21h20L12 3z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 10v5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="18" r="1" fill="currentColor"/></svg> {{ _('Important')}}:</strong> {{ _('This information is not financial advice. All decisions are made at your own risk. Before making investment decisions, consult with a financial advisor.')}}
             </div>
           </template>
 

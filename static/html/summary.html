@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ _('Advisor Summary') }}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="icon" type="image/png" href="/static/icon/logo.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/static/js/chart.umd.min.js"></script>
+    <style>
+        .viz-root {
+            /* palette validated for dark surface (see dataviz method) */
+            --surface-1: #000000;
+            --pos: #199e70;       /* realized gain */
+            --neg: #e66767;       /* realized loss */
+            --neutral: #6b6a66;   /* ~zero */
+            --alloc-equities: #3987e5;
+            --alloc-mm: #c98500;
+            --alloc-bonds: #9085e9;
+            --alloc-gold: #d95926;
+            --card: #101418;
+            --border: #23282e;
+        }
+        .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.25rem; }
+        .badge { display: inline-block; padding: 0.1rem 0.55rem; border-radius: 999px; font-size: 0.75rem; border: 1px solid var(--border); }
+        .badge-buy { color: #7fd7b4; border-color: #199e70; }
+        .badge-sell { color: #f0a3a3; border-color: #e66767; }
+        .badge-hold { color: #c3c2b7; }
+        .badge-avoid { color: #8a8984; border-style: dashed; }
+        .badge-on { color: #7fd7b4; border-color: #199e70; }
+        .badge-off { color: #f0a3a3; border-color: #e66767; }
+        .num { font-variant-numeric: tabular-nums; }
+        table.data { width: 100%; font-size: 0.85rem; border-collapse: collapse; }
+        table.data th { text-align: left; color: #8a8984; font-weight: 500; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--border); }
+        table.data td { padding: 0.3rem 0.5rem; border-bottom: 1px solid #15191d; }
+        table.data tr:hover td { background: #15191d; }
+        .scroll-x { overflow-x: auto; }
+        .icon { display: inline-block; vertical-align: -2px; }
+    </style>
+</head>
+<body class="viz-root">
+<main class="container text-white">
+    <header class="header grid grid-cols-2 md:grid-cols-3 mb-6">
+        <div class="logo">
+            <a href="/" class="flex items-center gap-2">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                    <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                    <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                    <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                </svg>
+                <span>{{ _('Advisor Summary') }}</span>
+            </a>
+        </div>
+        <nav class="nav hidden-on-touchscreen justify-center">
+            <a href="/" class="relative nav-link after:absolute after:left-0 after:bottom-0 after:h-[2px] after:w-0 after:bg-white after:transition-all after:duration-300 hover:after:w-full">{{ _('Home') }}</a>
+        </nav>
+        <div class="justify-end flex">
+            {% if lang == 'ru' %}
+                <a class="nav-link" href="/lang/en">EN</a>
+            {% else %}
+                <a class="nav-link" href="/lang/ru">RU</a>
+            {% endif %}
+        </div>
+    </header>
+
+    {% if not reports %}
+    <section class="card text-center py-10">
+        <p class="text-lg">{{ _('No reports yet') }}</p>
+        <p class="text-sm text-gray-400 mt-2">{{ _('The advisor runs Saturday 08:00 and Thursday 16:00 (MSK). Trigger manually:') }}
+            <code class="text-xs">POST /api/advisor/run</code></p>
+    </section>
+    {% else %}
+
+    <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
+        <!-- Reports list -->
+        <aside class="lg:col-span-1 space-y-2">
+            {% for r in reports %}
+            <a href="/summary/{{ r.id }}" class="card block hover:border-gray-500 transition {% if report and report.id == r.id %}border-gray-400{% endif %}">
+                <div class="flex justify-between items-center">
+                    <span class="num">{{ r.week_start }}</span>
+                    <span class="badge {% if r.kind == 'midweek' %}badge-hold{% endif %}">{{ r.kind }}</span>
+                </div>
+                <div class="flex justify-between items-center mt-1 text-xs text-gray-400">
+                    <span>
+                        {% if r.regime %}
+                        <span class="badge {{ 'badge-on' if r.regime.risk_on else 'badge-off' }}">{{ 'risk-on' if r.regime.risk_on else 'risk-off' }}</span>
+                        {% endif %}
+                        {% if r.alarms %}<span class="badge badge-sell"><svg class="icon" width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 3L2 21h20L12 3z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 10v5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="18" r="1" fill="currentColor"/></svg> {{ r.alarms|length }}</span>{% endif %}
+                    </span>
+                    <span class="num">B:{{ r.n_buy }} S:{{ r.n_sell }} / {{ r.n_recommendations }}</span>
+                </div>
+            </a>
+            {% endfor %}
+        </aside>
+
+        <!-- Detail -->
+        <section class="lg:col-span-3 space-y-4">
+            {% if not report %}
+            <div class="card text-gray-400">{{ _('Select a report') }}</div>
+            {% else %}
+
+            <div class="card flex flex-wrap items-center justify-between gap-3">
+                <div class="flex items-center gap-3 flex-wrap">
+                    <h2 class="text-xl num">{{ report.week_start }}</h2>
+                    <span class="badge">{{ report.kind }}</span>
+                    <span class="badge">{{ report.status }}</span>
+                    {% if report.regime %}
+                    <span class="badge {{ 'badge-on' if report.regime.risk_on else 'badge-off' }}">{{ report.regime.cell }}</span>
+                    <span class="badge num">{{ _('CBR rate') }}: {{ report.regime.cbr_rate }}%</span>
+                    <span class="badge num">IMOEX {{ report.regime.index_last }} / SMA10m {{ report.regime.index_sma10m }}</span>
+                    {% endif %}
+                </div>
+                <a href="/api/reports/{{ report.id }}/export" download
+                   class="badge hover:border-gray-400"><svg class="icon" width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> {{ _('Export JSON for Claude Code') }}</a>
+            </div>
+
+            {% if report.alarms %}
+            <div class="card" style="border-color:#e66767">
+                <h3 class="mb-2" style="color:#f0a3a3"><svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 3L2 21h20L12 3z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 10v5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="18" r="1" fill="currentColor"/></svg> {{ _('Alarms') }} ({{ report.alarms|length }})</h3>
+                <ul class="text-sm space-y-1">
+                    {% for a in report.alarms %}
+                    <li class="num">{{ a.secid }} · {{ a.action }} · {{ '%+.1f'|format(a.interim_return * 100) }}%</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {% if report.allocation %}
+                <div class="card">
+                    <h3 class="mb-2 text-sm text-gray-400">{{ _('Allocation') }}</h3>
+                    <div class="flex items-center gap-4">
+                        <div style="width:160px;height:160px"><canvas id="allocChart"></canvas></div>
+                        <ul class="text-sm space-y-1 num" id="allocLegend"></ul>
+                    </div>
+                </div>
+                {% endif %}
+
+                <div class="card" id="statsCard">
+                    <h3 class="mb-2 text-sm text-gray-400">{{ _('Last week evaluation') }}</h3>
+                    <div class="grid grid-cols-3 gap-3 text-center" id="statTiles"></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3 class="mb-2 text-sm text-gray-400" id="factChartTitle">{{ _('Forecast vs fact: realized return per recommendation') }}</h3>
+                <div class="scroll-x"><div style="min-width:600px"><canvas id="factChart" height="110"></canvas></div></div>
+            </div>
+
+            <div class="card" id="componentsCard">
+                <h3 class="mb-2 text-sm text-gray-400">{{ _('Which strategy component was wrong') }}</h3>
+                <div class="scroll-x">
+                    <table class="data" id="componentsTable"></table>
+                </div>
+            </div>
+
+            {% if report.recommendations %}
+            <div class="card">
+                <h3 class="mb-2 text-sm text-gray-400">{{ _('Recommendations') }} ({{ report.recommendations|length }})</h3>
+                <div class="scroll-x">
+                    <table class="data">
+                        <thead>
+                        <tr>
+                            <th>secid</th><th>{{ _('class') }}</th><th>{{ _('action') }}</th>
+                            <th class="num">score</th><th class="num">m3</th><th class="num">m12-1</th>
+                            <th class="num">vol</th><th class="num">div</th><th class="num">sent</th>
+                            <th class="num">{{ _('price') }}</th><th class="num">{{ _('zone d+7') }}</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {% for x in report.recommendations %}
+                        <tr>
+                            <td class="num">{{ x.secid }}</td>
+                            <td>{{ x.asset_class }}</td>
+                            <td><span class="badge badge-{{ x.action|lower }}">{{ x.action }}{% if x.components.get('vetoed') %} <svg class="icon" width="11" height="11" viewBox="0 0 24 24" fill="none"><title>veto</title><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M5.6 5.6l12.8 12.8" stroke="currentColor" stroke-width="2"/></svg>{% endif %}</span></td>
+                            <td class="num">{{ '%.2f'|format(x.components.get('composite')) if x.components.get('composite') is not none else '—' }}</td>
+                            <td class="num">{{ '%+.1f%%'|format(x.components.get('m3') * 100) if x.components.get('m3') is not none else '—' }}</td>
+                            <td class="num">{{ '%+.1f%%'|format(x.components.get('m12_1') * 100) if x.components.get('m12_1') is not none else '—' }}</td>
+                            <td class="num">{{ '%.0f%%'|format(x.components.get('vol_ann') * 100) if x.components.get('vol_ann') is not none else '—' }}</td>
+                            <td class="num">{{ '%.1f%%'|format(x.components.get('div_yield') * 100) if x.components.get('div_yield') is not none else '—' }}</td>
+                            <td class="num">{{ '%+.2f'|format(x.components.get('sentiment')) if x.components.get('sentiment') is not none else '—' }}</td>
+                            <td class="num">{{ x.price_at_reco if x.price_at_reco is not none else '—' }}</td>
+                            <td class="num">{% if x.forecast_low is not none %}{{ x.forecast_low }}–{{ x.forecast_high }}{% else %}—{% endif %}</td>
+                        </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% endif %}
+
+            {% endif %}
+        </section>
+    </div>
+    {% endif %}
+</main>
+
+{% if report %}
+<script>
+const REPORT = {{ report_json | safe }};
+const css = (name) => getComputedStyle(document.body).getPropertyValue(name).trim();
+const POS = css('--pos'), NEG = css('--neg'), NEUTRAL = css('--neutral'), SURFACE = css('--surface-1');
+Chart.defaults.color = '#c3c2b7';
+Chart.defaults.borderColor = '#23282e';
+Chart.defaults.font.family = '"Work Sans", sans-serif';
+
+// ---- Allocation doughnut (order chosen for CVD-safe adjacency) ----
+if (REPORT.allocation && document.getElementById('allocChart')) {
+    const order = [
+        ['equities', css('--alloc-equities')],
+        ['money_market', css('--alloc-mm')],
+        ['bonds', css('--alloc-bonds')],
+        ['gold', css('--alloc-gold')],
+    ].filter(([k]) => REPORT.allocation[k] !== undefined);
+    new Chart(document.getElementById('allocChart'), {
+        type: 'doughnut',
+        data: {
+            labels: order.map(([k]) => k),
+            datasets: [{
+                data: order.map(([k]) => REPORT.allocation[k]),
+                backgroundColor: order.map(([, c]) => c),
+                borderColor: SURFACE, borderWidth: 2,  // 2px surface gap between fills
+            }],
+        },
+        options: {
+            plugins: { legend: { display: false }, tooltip: {
+                callbacks: { label: (ctx) => ` ${ctx.label}: ${(ctx.parsed * 100).toFixed(0)}%` } } },
+            cutout: '62%',
+        },
+    });
+    document.getElementById('allocLegend').innerHTML = order.map(([k, c]) =>
+        `<li><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${c};margin-right:6px"></span>${k}: <b>${(REPORT.allocation[k] * 100).toFixed(0)}%</b></li>`).join('');
+}
+
+// ---- Evaluation: stat tiles + forecast-vs-fact bars + component table ----
+const ev = REPORT.evaluation || {};
+const details = ev.details || (ev.interim || []).map(r => ({
+    secid: r.secid, action: r.action, realized_return: r.interim_return, hit: null, in_zone: null,
+}));
+const isInterim = !ev.details && !!ev.interim;
+
+const tiles = [];
+if (ev.overall_hit_rate !== undefined && ev.overall_hit_rate !== null)
+    tiles.push(['hit-rate', (ev.overall_hit_rate * 100).toFixed(0) + '%']);
+if (ev.benchmark_return !== undefined && ev.benchmark_return !== null)
+    tiles.push(['IMOEX', (ev.benchmark_return * 100).toFixed(1) + '%']);
+if (ev.forecast_zone_coverage !== undefined && ev.forecast_zone_coverage !== null)
+    tiles.push(['{{ _("in zone q10–q90") }}', (ev.forecast_zone_coverage * 100).toFixed(0) + '%']);
+if (ev.n_evaluated) tiles.push(['n', ev.n_evaluated]);
+document.getElementById('statTiles').innerHTML = tiles.length
+    ? tiles.map(([k, v]) => `<div><div class="text-2xl num">${v}</div><div class="text-xs text-gray-400">${k}</div></div>`).join('')
+    : '<div class="col-span-3 text-sm text-gray-500">{{ _("No evaluation yet — appears from the second report on") }}</div>';
+
+if (details.length) {
+    if (isInterim) document.getElementById('factChartTitle').textContent = '{{ _("Interim move since the weekly report") }}';
+    const sorted = [...details].sort((a, b) => a.realized_return - b.realized_return);
+    new Chart(document.getElementById('factChart'), {
+        type: 'bar',
+        data: {
+            labels: sorted.map(d => d.secid),
+            datasets: [{
+                data: sorted.map(d => +(d.realized_return * 100).toFixed(2)),
+                backgroundColor: sorted.map(d =>
+                    Math.abs(d.realized_return) < 0.002 ? NEUTRAL : (d.realized_return > 0 ? POS : NEG)),
+                borderRadius: 4, borderSkipped: false,
+                barPercentage: 0.8, categoryPercentage: 0.9,
+            }],
+        },
+        options: {
+            plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: {
+                    label: (ctx) => {
+                        const d = sorted[ctx.dataIndex];
+                        let line = ` ${d.action}: ${ctx.parsed.y > 0 ? '+' : ''}${ctx.parsed.y}%`;
+                        if (d.hit !== null && d.hit !== undefined) line += d.hit ? ' · hit' : ' · miss';
+                        if (d.in_zone !== null && d.in_zone !== undefined) line += d.in_zone ? ' · in zone' : ' · out of zone';
+                        return line;
+                    },
+                } },
+            },
+            scales: {
+                y: { title: { display: true, text: '%' }, grid: { color: '#15191d' } },
+                x: { ticks: { autoSkip: true, maxRotation: 60 }, grid: { display: false } },
+            },
+        },
+    });
+} else {
+    document.getElementById('factChart').closest('.card').style.display = 'none';
+}
+
+const comp = ev.by_component;
+if (comp) {
+    const fmt = (v, pct) => (v === null || v === undefined) ? '—'
+        : pct ? (v * 100).toFixed(1) + '%' : v;
+    const rows = Object.entries(comp).map(([name, b]) => `
+        <tr>
+            <td>${name}</td>
+            <td class="num">${b.bullish.n}</td>
+            <td class="num">${fmt(b.bullish.median_return, true)}</td>
+            <td class="num">${fmt(b.bullish.hit_rate, true)}</td>
+            <td class="num">${b.bearish.n}</td>
+            <td class="num">${fmt(b.bearish.median_return, true)}</td>
+        </tr>`).join('');
+    document.getElementById('componentsTable').innerHTML = `
+        <thead><tr>
+            <th>{{ _('component') }}</th><th class="num">n+</th>
+            <th class="num">{{ _('median (bullish)') }}</th><th class="num">hit</th>
+            <th class="num">n−</th><th class="num">{{ _('median (bearish)') }}</th>
+        </tr></thead><tbody>${rows}</tbody>`;
+} else {
+    document.getElementById('componentsCard').style.display = 'none';
+}
+</script>
+{% endif %}
+</body>
+</html>
