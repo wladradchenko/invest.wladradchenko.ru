@@ -211,7 +211,6 @@ The project is open for improvements and suggestions.
 | Technical Indicators and Prediction Price | Portfolio Result |
 |--------------|--------------|
 | [![4](screens/4.png)](screens/4.png) | [![5](screens/5.png)](screens/5.png) |
-=======
 | Technical Indicators and Prediction Price | Overall Sentiment | Portfolio Result |
 |--------------|--------------|--------------|
 | [![4](screens/4.png)](screens/4.png) | [![5](screens/6.png)](screens/6.png) | [![6](screens/5.png)](screens/5.png) |
